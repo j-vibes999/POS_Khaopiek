@@ -1,0 +1,19 @@
+Khao piak sen photograph
+Author: Spencer
+Source: https://commons.wikimedia.org/wiki/File:Khao_piak_sen.jpg
+License: Creative Commons Attribution-ShareAlike 4.0
+https://creativecommons.org/licenses/by-sa/4.0/
+Downloaded image resized for web presentation; CSS displays a cropped area. The photograph and its resized presentation retain CC BY-SA 4.0.
+
+Illustrative stock photographs from Unsplash:
+Pho by Kirill Tonkikh: https://unsplash.com/photos/NFQi_2HUNRI
+https://images.unsplash.com/photo-1631709497146-a239ef373cf1
+Iced coffee: https://images.unsplash.com/photo-1461023058943-07fcbe16d735
+Lime tea: https://images.unsplash.com/photo-1556679343-c7306c1976bc
+
+Fonts: Noto Sans Lao and Noto Sans Thai, Google Fonts.
+SIL Open Font License 1.1: https://openfontlicense.org/
+https://github.com/notofonts/lao
+https://github.com/notofonts/thai
+
+Icons: Lucide, ISC license, https://lucide.dev/license
