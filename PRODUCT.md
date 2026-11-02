@@ -28,3 +28,6 @@ Counter tablets and desktops; customers use phones; cooks need a clear queue. Pa
 
 ## Evidence on Hand
 An empty project and the conversation brief. Restaurant name and menu prices are illustrative prototype content.
+
+## Customer UI Reference
+The user supplied six mobile ordering screenshots as a design reference. The customer surface follows their orange/white palette, large two-column food photography, prominent prices, search and scrolling categories, grid/list switch, three-tab bottom navigation (Menu / Orders / QR), full-page basket, and table-specific order history. Customer language selection covers Lao, Thai, English, Chinese, Korean and Japanese; Lao remains the initial language. Restaurant branding, sample dishes, and payment-before-kitchen flow remain this project's own.

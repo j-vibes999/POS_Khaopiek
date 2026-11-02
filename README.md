@@ -19,6 +19,8 @@ Open the Local URL printed by Vite. `npm run build` creates `dist/`; `npm test` 
 4. Menu management can mark dishes unavailable; the customer menu reflects that immediately.
 5. Sales totals use only paid demo orders. QR links include the selected table number.
 
+The customer view opens at `/?table=3#customer`. It has its own orange/white mobile interface, six-language menu, search, grid/list views, full-page basket and per-table order history. The three bottom tabs lead to Menu, Orders and QR. Staff preview is accessible from the QR page. Browser back navigation works between customer subpages. Paid orders are excluded from the outstanding amount.
+
 All values are illustrative. There is no actual payment, authentication, cross-device synchronization, permanent storage or QR-session security. Refreshing the page resets the demo. Phone access to the local dev server requires the printed Network URL and the same local network; localhost QR links work on the computer itself. The hosted prototype provides a reachable QR URL, with browser-local demo state still separate per device.
 
 ## Assets
