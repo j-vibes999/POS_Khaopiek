@@ -5,7 +5,7 @@
 web
 
 ## Stack
-Prototype implementation choice: React + Vite, browser-local state, no backend. The user requested an immediately usable visual prototype and deferred database work; framework selection is an implementation assumption, not a confirmed long-term constraint.
+Prototype implementation choice: React + Vite, browser-local preview state persisted in localStorage, no backend. The user requested an immediately usable visual prototype and deferred database work; framework selection is an implementation assumption, not a confirmed long-term constraint.
 
 ## Users
 Restaurant customers, cashiers, cooks, and restaurant owners in Laos, especially noodle and khao piek shops.
@@ -14,7 +14,7 @@ Restaurant customers, cashiers, cooks, and restaurant owners in Laos, especially
 Allow customers to order from table QR links, cashiers to verify payment, and cooks to prepare accepted orders. Reduce staff interruptions and mistakes about tables and food.
 
 ## Capabilities and Constraints
-Current scope is a clickable UI/UX prototype only. No database, actual transfers, bank verification, authentication, or live multi-device synchronization. User explicitly requires Lao as the primary language with a Thai switch, large readable controls, simplicity, beauty, and no generic AI appearance. Demo data must be identified as such.
+Current scope is a clickable UI/UX prototype only. No server database, actual transfers, bank verification, authentication, or live multi-device synchronization. Drafts and demo orders survive reloads within the same browser and origin. User explicitly requires Lao as the primary language with a Thai switch, large readable controls, simplicity, beauty, and no generic AI appearance. Demo data must be identified as such.
 
 ## Operating Context
 Counter tablets and desktops; customers use phones; cooks need a clear queue. Payment confirmation precedes kitchen work in the proposed flow. A manual cashier entry path supports customers who do not scan.

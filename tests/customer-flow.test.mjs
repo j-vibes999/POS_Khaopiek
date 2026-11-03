@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { customerOrders, summarizeCustomerOrders, filterCustomerMenu } from '../src/customer-model.mjs';
+import { customerOrders, summarizeCustomerOrders, filterCustomerMenu, applyOrderAction } from '../src/customer-model.mjs';
 
 const orders = [
   { id: 'a', table: 3, paid: true, items: [{ price: 35000, quantity: 2 }] },
@@ -27,4 +27,24 @@ test('customer menu search finds translated names within the selected category',
   assert.deepEqual(filterCustomerMenu(menu, 'all', ' หมู ').map(item => item.id), ['pork']);
   assert.equal(filterCustomerMenu(menu, 'drinks', 'หมู').length, 0);
   assert.deepEqual(filterCustomerMenu(menu, 'pho', '').map(item => item.id), ['pho']);
+});
+
+test('closing the last open order clears the table, so the next guests start with an empty history', () => {
+  const session = { orders: [{ id: '1', table: 3, status: 'served', paid: true, createdAt: 100, items: [] }], drafts: {}, clearedAt: {} };
+  const closed = applyOrderAction(session, '1', 'close', undefined, 200);
+  assert.equal(closed.clearedAt[3], 200);
+  assert.deepEqual(customerOrders(closed.orders, 3, closed.clearedAt[3]), []);
+  const nextGuests = [{ id: '2', table: 3, status: 'pending', paid: false, createdAt: 300, items: [] }, ...closed.orders];
+  assert.deepEqual(customerOrders(nextGuests, 3, closed.clearedAt[3]).map(order => order.id), ['2']);
+});
+
+test('closing one of several orders keeps the table sitting and its history', () => {
+  const session = { orders: [
+    { id: '1', table: 3, status: 'served', paid: true, createdAt: 100, items: [] },
+    { id: '2', table: 3, status: 'cooking', paid: true, createdAt: 150, items: [] },
+  ], drafts: {}, clearedAt: {} };
+  const closed = applyOrderAction(session, '1', 'close', undefined, 200);
+  assert.equal(closed.orders[0].status, 'completed');
+  assert.equal(closed.clearedAt[3], undefined);
+  assert.equal(customerOrders(closed.orders, 3, closed.clearedAt[3]).length, 2);
 });

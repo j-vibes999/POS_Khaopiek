@@ -1,3 +1,4 @@
+export const tableCount = 12;
 export const initialMenu = [
   { id: 'pork', lo: 'ເຂົ້າປຽກເສັ້ນໝູ', th: 'ข้าวเปียกเส้นหมู', detailLo: 'ເສັ້ນນຸ່ມ ນ້ຳຊຸບກະດູກໝູ ໃສ່ຜັກຫອມ', detailTh: 'เส้นนุ่ม น้ำซุปกระดูกหมู โรยต้นหอม', price: 35000, category: 'noodles', image: '/images/khao-piak.jpg', popular: true, available: true },
   { id: 'chicken', lo: 'ເຂົ້າປຽກເສັ້ນໄກ່', th: 'ข้าวเปียกเส้นไก่', detailLo: 'ຊີ້ນໄກ່ນຸ່ມ ນ້ຳຊຸບຫອມ ລົດຊາດກົມກ່ອມ', detailTh: 'เนื้อไก่นุ่ม น้ำซุปหอม รสชาติกลมกล่อม', price: 35000, category: 'noodles', image: '/images/khao-piak.jpg', available: true },

@@ -9,3 +9,11 @@ export function addCartItem(cart, item) {
   const same = (row) => row.id === item.id && row.size === item.size && row.note === item.note;
   return cart.some(same) ? cart.map(row => same(row) ? { ...row, quantity: row.quantity + item.quantity } : row) : [...cart, { ...item, key: `${item.id}-${Date.now()}-${cart.length}` }];
 }
+export function updateCartItem(cart, key, item) {
+  if (!cart.some(row => row.key === key)) return cart;
+  const matching = cart.find(row => row.key !== key && row.id === item.id && row.size === item.size && row.note === item.note);
+  if (matching) {
+    return cart.filter(row => row.key !== key).map(row => row.key === matching.key ? { ...row, quantity: row.quantity + item.quantity } : row);
+  }
+  return cart.map(row => row.key === key ? { ...item, key } : row);
+}
