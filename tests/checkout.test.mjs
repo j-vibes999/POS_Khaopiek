@@ -46,9 +46,19 @@ test('draft choices survive a reload before checkout', () => {
 
 test('invalid saved data falls back to the demo without crashing', () => {
   const initial = [{ id: '1024' }];
-  const fallback = { orders: initial, drafts: {}, soldOut: [], clearedAt: {} };
-  assert.deepEqual(restoreDemoSession({ getItem: () => '{broken' }, initial), fallback);
-  assert.deepEqual(restoreDemoSession({ getItem: () => JSON.stringify({ version: 1, orders: 'invalid', drafts: {} }) }, initial), fallback);
+  for (const saved of ['{broken', JSON.stringify({ version: 1, orders: 'invalid', drafts: {} })]) {
+    const restored = restoreDemoSession({ getItem: () => saved }, initial);
+    assert.deepEqual({ orders: restored.orders, drafts: restored.drafts, soldOut: restored.soldOut, clearedAt: restored.clearedAt }, { orders: initial, drafts: {}, soldOut: [], clearedAt: {} });
+    assert.equal(restored.staff.length, 4);
+    assert.equal(restored.tables.length, 12);
+  }
+});
+
+test('checkout falls back to an enabled payment method when the basket holds a switched-off one', () => {
+  const browser = storage();
+  const result = commitCheckout(browser, { ...state(), settings: { methods: ['transfer'] } }, 3, 'qr', 123456);
+  assert.equal(result.session.orders[0].method, 'transfer');
+  assert.deepEqual(result.session.settings, { methods: ['transfer'] });
 });
 
 test('one damaged saved order is skipped without discarding the rest of the demo', () => {

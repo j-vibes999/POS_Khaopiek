@@ -13,13 +13,36 @@ Open the Local URL printed by Vite. `npm start` builds and serves the lightweigh
 
 ## Try the workflow
 
-1. Select a table to inspect its order. Confirm receipt of the demo payment, then switch to the kitchen.
-2. In the kitchen, start cooking and mark the order ready. Return to the cashier to serve it and close the table.
-3. Open the customer menu, select food, customize size and notes, and submit. Its new order appears at the cashier in this browser, including other open tabs. A cashier-entered order returns to its table, ready for payment.
-4. Menu management can mark dishes unavailable; the customer menu reflects that immediately, and a basket holding that dish cannot be sent until the dish is removed.
-5. Sales totals use only paid demo orders. QR links include the selected table number.
+1. Select a table to inspect its order and take payment. Choose transfer or cash; for cash, enter or tap the amount received and the change is shown before the single confirm. The order then goes to the kitchen.
+2. In the kitchen, start cooking and mark the order ready. Tickets are ordered by payment time, a strip at the top totals every dish still to cook, ready food moves to its own strip, and an optional sound plays for each new ticket. Return to the cashier to serve it and close the table.
+3. Every status change shows a notice with **Undo** for 6 seconds. Undo is refused if someone else has already moved the order on.
+4. **Add order** on a table opens the quick order screen: tap dishes, set size, “no herbs” or a note, then send and take payment at once, or send now and pay later.
+5. Open the customer menu, select food, customize size and notes, and submit. Its new order appears at the cashier in this browser, including other open tabs. The customer's third tab calls staff (help, pay at the table, water); the table shows a red badge and the cashier answers it from the table panel.
+6. Menu management can mark dishes unavailable; the customer menu reflects that immediately, and a basket holding that dish cannot be sent until the dish is removed. Owners and managers can add, edit and delete dishes there; customers see the same categories.
+7. Sales totals use only paid demo orders and can show today, the last 7 days or everything (Vientiane time). QR links include the selected table number.
+8. Open a cash shift before taking payments, then close it by entering the counted cash; the shift history keeps the expected amount and the difference.
 
-The customer view opens at `/?table=3#customer`. It has its own orange/white mobile interface, six-language menu, search, grid/list views, full-page basket and per-table order history. The three bottom tabs lead to Menu, Orders and QR. A preview opened from the staff screens can return to them from the menu header or the QR page; customer QR links show no staff access. A link whose table is not a whole number from 1 to 12 shows a “table not found” page instead of a menu. Browser back navigation works between customer subpages. Paid orders are excluded from the outstanding amount. Closing a table's last open order clears its customer history for the next guests.
+## Back office
+
+The staff sidebar has three groups: daily work (Tables, Orders, Kitchen, Shift & cash), shop management (Menu, Tables & QR, Staff, Reports) and system (Settings, customer menu preview). On phones the bottom tabs are Tables, Orders, Kitchen and Shift; the rest, the customer preview and Switch user sit under More.
+
+Each person signs in with a 4-digit PIN from the profile at the bottom of the sidebar (More → Switch user on phones). The sidebar shows only the screens that person's role may open:
+
+| Role | Screens |
+|---|---|
+| Owner | Everything, including Settings |
+| Manager | Everything except Settings |
+| Cashier | Tables, quick order, Orders, Shift & cash (own shifts), Menu availability |
+| Kitchen | Kitchen screen only |
+
+Demo PINs: owner `1111`, manager `2222`, cashier `3333`, kitchen `4444`. They are stored in browser storage for this prototype only; a real backend must check hashed PINs on the server.
+
+- **Shift & cash** opens a shift with the starting float and counts cash and transfer payments taken while it is open. Closing it records the counted cash and the difference.
+- **Tables & QR** adds or removes the last table, sets each table's zone and seats, and prints QR codes for every table at once. A table with open orders cannot be removed.
+- **Staff** adds people, sets roles and PINs, and switches accounts off. The shop always keeps one active owner, and nobody can change their own role.
+- **Settings** holds the shop name, branch and phone, the payment methods customers and cashiers see, the activity log (who took payment, closed tables, changed menus, staff or settings), and a reset for the demo data.
+
+The customer view opens at `/?table=3#customer`. It has its own orange/white mobile interface, six-language menu, search, grid/list views, full-page basket and per-table order history. The three bottom tabs lead to Menu, Orders and Call staff. A preview opened from the staff screens can return to them from the menu header or the call page; customer QR links show no staff access. A link whose table is not one of the shop's tables (1–12 by default) shows a “table not found” page instead of a menu. Browser back navigation works between customer subpages. Paid orders are excluded from the outstanding amount. Closing a table's last open order clears its customer history for the next guests.
 
 Basket items can be edited before submission, retaining their size, quantity and kitchen note. Matching edits combine quantities without adding a duplicate line. Checkout and order-summary space adapt to their measured height. Customer status guidance states the next action; staff order selectors show individual statuses, and kitchen tickets adapt their column count for readable tablet use.
 

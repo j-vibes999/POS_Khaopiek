@@ -192,19 +192,6 @@
 .dining-option-bottom { flex-shrink: 0; display: flex; align-items: center; gap: 19px; padding: 18px 25px; background: #fff; border-top: 1px solid #f0f1f3; }
 .dining-option-bottom > .dining-primary { flex: 1; min-width: 0; font-size: 16px; }
 .dining-option-bottom .dining-quantity { gap: 7px; }
-.dining-qr-page { max-width: 550px; margin: auto; padding: 30px 24px; text-align: center; }
-.dining-qr-card { background: #fff; padding: 28px 25px; border-radius: 18px; }
-.dining-qr-card h2 { font-size: 23px; font-weight: 700; }
-.dining-qr-card > p { color: #6b7280; font-size: 14px; margin-top: 9px; }
-.dining-qr-image { width: min(280px, 100%); aspect-ratio: 1; margin: 16px auto 10px; display: grid; place-items: center; }
-.dining-qr-image img { width: 100%; height: 100%; }
-.dining-qr-image p { font-size: 14px; color: #885429; }
-.dining-qr-placeholder { width: 100%; height: 100%; background: #f4f4f2; border-radius: 8px; }
-.dining-qr-table { display: block; font-size: 29px; font-weight: 700; letter-spacing: 1px; margin-bottom: 12px; }
-.dining-qr-card > .dining-primary { width: 100%; }
-.dining-qr-network { color: #55634f; font-size: 14px; line-height: 1.8; margin-top: 17px; }
-.dining-app .dining-qr-address { display: block; margin-top: 16px; color: #6b7280; font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; text-decoration: underline; text-underline-offset: 3px; user-select: text; }
-.dining-qr-caption { font-size: 12px; color: #6b7280; margin-top: 19px; }
 .dining-demo-info { border-top: 1px solid #e5e7eb; margin-top: 25px; padding-top: 20px; font-size: 13px; color: #6b7280; }
 .dining-demo-info > span { font-weight: 600; color: #616a78; }
 .dining-demo-info > p { font-size: 12px; margin-top: 6px; line-height: 1.8; }
@@ -333,12 +320,7 @@
   .dining-option-bottom .dining-quantity { gap: 5px; }
   .dining-option-bottom .dining-quantity > button { width: 44px; height: 44px; }
   .dining-option-bottom .dining-quantity > span { font-size: 16px; min-width: 18px; }
-  .dining-tab-qr .dining-page-banner { min-height: 100px; padding-block: max(15px, env(safe-area-inset-top)) 15px; }
-  .dining-qr-page { padding: 18px; }
-  .dining-qr-image { width: min(248px, 100%); }
-  .dining-qr-card { padding: 20px; }
-  .dining-qr-card h2 { font-size: 22px; }
-  .dining-qr-card > p { font-size: 13px; }
+  .dining-tab-call .dining-page-banner { min-height: 100px; padding-block: max(15px, env(safe-area-inset-top)) 15px; }
   .dining-empty { padding: 55px 10px; }
   .dining-empty h2 { font-size: 21px; }
   .dining-notice { font-size: 12px; gap: 8px; left: 12px; right: 12px; padding: 12px; }
@@ -352,6 +334,24 @@
   .dining-menu-content { padding-top: 31px; }
   .dining-category-bar { top: 0; }
 }
+.dining-call-page { max-width: 550px; margin: auto; padding: 30px 24px; }
+.dining-call-card, .dining-call-sent { background: #fff; padding: 26px 22px; border-radius: 18px; }
+.dining-call-card h2, .dining-call-sent h2 { font-size: 23px; font-weight: 700; line-height: 1.5; }
+.dining-call-card > p { color: var(--dining-muted); font-size: 14px; margin-top: 6px; }
+.dining-call-options { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.dining-call-options > button { display: flex; align-items: center; gap: 14px; min-height: 72px; padding: 12px 16px; border: 1.5px solid var(--dining-line); border-radius: 14px; background: #fff; text-align: left; color: var(--dining-ink); }
+.dining-call-options > button:hover { border-color: #e8a268; background: #fffaf5; }
+.dining-call-options > button > span { width: 48px; height: 48px; flex-shrink: 0; display: grid; place-items: center; border-radius: 50%; background: #fff0df; color: var(--dining-action); }
+.dining-call-options strong { flex: 1; font-size: 17px; font-weight: 650; line-height: 1.5; }
+.dining-call-options > button > svg { color: #b9a596; flex-shrink: 0; }
+.dining-call-hint { font-size: 13px; line-height: 1.8; color: var(--dining-muted); margin-top: 16px; }
+.dining-call-sent { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.dining-call-sent > p { color: var(--dining-muted); font-size: 15px; }
+.dining-call-sent > .dining-secondary { margin-top: 12px; width: 100%; }
+.dining-call-pulse { position: relative; width: 76px; height: 76px; display: grid; place-items: center; border-radius: 50%; background: #fff0df; color: var(--dining-action); margin-bottom: 6px; }
+.dining-call-pulse::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid #f4a868; animation: dining-call-ring 1.8s ease-out infinite; }
+@keyframes dining-call-ring { from { scale: 1; opacity: .9; } to { scale: 1.45; opacity: 0; } }
+.dining-popular { position: absolute; top: 10px; left: 10px; padding: 4px 10px; border-radius: 999px; background: #fff; color: #a94000; font-size: 12px; font-weight: 700; box-shadow: 0 2px 8px #29324114; }
 @media (prefers-reduced-motion: reduce) {
   .dining-app *, .dining-app *::before, .dining-app *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }

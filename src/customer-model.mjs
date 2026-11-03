@@ -1,4 +1,5 @@
 import { orderTotal, nextOrderStatus } from './order-model.mjs';
+import { normalizeBackOffice } from './backoffice-model.mjs';
 
 // Orders from before the table was last cleared belong to earlier guests.
 export const customerOrders = (orders, table, clearedAt = 0) => orders.filter(order => order.table === table && (!clearedAt || order.createdAt > clearedAt));
@@ -14,6 +15,8 @@ export function summarizeCustomerOrders(orders) {
 }
 
 export function customerCategory(item) {
+  if (['khao', 'pho', 'drinks', 'other'].includes(item.category)) return item.category;
+  // Orders saved before dishes carried their own category.
   return item.category === 'drinks' ? 'drinks' : ['pork', 'chicken'].includes(item.id) ? 'khao' : 'pho';
 }
 
@@ -55,6 +58,7 @@ export function readDemoSession(storage) {
       drafts: Object.fromEntries(Object.entries(saved.drafts).filter(([table, draft]) => /^\d+$/.test(table) && validDraft(draft))),
       soldOut: Array.isArray(saved.soldOut) ? saved.soldOut.filter(id => typeof id === 'string') : [],
       clearedAt: Object.fromEntries(Object.entries(saved.clearedAt ?? {}).filter(([table, time]) => /^\d+$/.test(table) && Number.isFinite(time))),
+      ...normalizeBackOffice(saved),
     };
   } catch {
     return null;
@@ -62,7 +66,7 @@ export function readDemoSession(storage) {
 }
 
 export function restoreDemoSession(storage, initialOrders) {
-  return readDemoSession(storage) ?? { orders: initialOrders, drafts: {}, soldOut: [], clearedAt: {} };
+  return readDemoSession(storage) ?? { orders: initialOrders, drafts: {}, soldOut: [], clearedAt: {}, ...normalizeBackOffice() };
 }
 
 export function persistDemoSession(storage, session) {
@@ -80,10 +84,26 @@ export function updateDemoSession(storage, current, change) {
 export function applyOrderAction(session, id, action, method, now = Date.now()) {
   const target = session.orders.find(order => order.id === id);
   if (!target) return session;
-  const orders = session.orders.map(order => order.id === id ? { ...order, status: nextOrderStatus(order, action), paid: action === 'pay' ? true : order.paid, method: method || order.method } : order);
+  // paidAt places each payment in the cash shift that was open when it was taken.
+  const paidAt = action === 'pay' && target.status === 'pending' ? now : target.paidAt;
+  const orders = session.orders.map(order => order.id === id ? { ...order, status: nextOrderStatus(order, action), paid: action === 'pay' ? true : order.paid, paidAt, method: method || order.method } : order);
   // Closing a table's last open order clears it for the next guests.
   const cleared = action === 'close' && orders.every(order => order.table !== target.table || order.status === 'completed');
-  return { ...session, orders, clearedAt: cleared ? { ...session.clearedAt, [target.table]: now } : session.clearedAt };
+  if (!cleared) return { ...session, orders };
+  const calls = { ...session.calls };
+  delete calls[target.table];
+  return { ...session, orders, clearedAt: { ...session.clearedAt, [target.table]: now }, calls };
+}
+
+// Puts one order and its table's clearing time back as they were before a mistaken tap.
+export function undoOrderAction(session, previous, clearedAt, status) {
+  const current = session.orders.find(order => order.id === previous.id);
+  // Someone has moved the order on since the tap; putting it back would erase their step.
+  if (!current || (status && current.status !== status)) throw Object.assign(new Error('The order has changed'), { code: 'changed' });
+  const restored = { ...session.clearedAt };
+  if (clearedAt === undefined) delete restored[previous.table];
+  else restored[previous.table] = clearedAt;
+  return { ...session, orders: session.orders.map(order => order.id === previous.id ? previous : order), clearedAt: restored };
 }
 
 export function commitCheckout(storage, session, table, source, createdAt = Date.now()) {
@@ -92,7 +112,10 @@ export function commitCheckout(storage, session, table, source, createdAt = Date
   if (!draft?.cart.length) throw new Error('The basket is empty');
   if (draft.cart.some(item => session.soldOut?.includes(item.id))) throw Object.assign(new Error('Sold-out dishes are in the basket'), { code: 'sold-out' });
   const orderId = String(Math.max(1024, ...session.orders.map(order => Number(order.id))) + 1);
-  const order = { id: orderId, table, items: draft.cart, source, status: 'pending', paid: false, method: draft.method, createdAt };
+  // A basket may still hold a payment method the owner has since switched off.
+  const enabled = session.settings?.methods;
+  const method = enabled?.length && !enabled.includes(draft.method) ? enabled[0] : draft.method;
+  const order = { id: orderId, table, items: draft.cart, source, status: 'pending', paid: false, method, createdAt };
   const next = {
     ...session,
     orders: [order, ...session.orders],

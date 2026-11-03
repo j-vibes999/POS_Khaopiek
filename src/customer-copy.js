@@ -10,13 +10,13 @@ const rows = {
   table: ['ໂຕະ', 'โต๊ะ', 'Table', '餐桌', '테이블', 'テーブル'],
   menu: ['ເມນູ', 'เมนู', 'Menu', '菜单', '메뉴', 'メニュー'],
   orders: ['ຄຳສັ່ງ', 'ออเดอร์', 'Orders', '订单', '주문', '注文'],
-  qr: ['QR', 'QR', 'QR', '二维码', 'QR', 'QR'],
   search: ['ຄົ້ນຫາອາຫານ…', 'ค้นหาอาหาร…', 'Search the menu…', '搜索菜品…', '메뉴 검색…', 'メニューを検索…'],
   clearSearch: ['ລ້າງຄຳຄົ້ນຫາ', 'ล้างคำค้นหา', 'Clear search', '清除搜索', '검색어 지우기', '検索をクリア'],
   all: ['ທັງໝົດ', 'ทั้งหมด', 'All dishes', '全部', '전체', 'すべて'],
   khao: ['ເຂົ້າປຽກ', 'ข้าวเปียก', 'Khao piek', '老挝米粉', '카오삐약', 'カオピアック'],
   pho: ['ເຝີ', 'เฝอ', 'Pho', '河粉', '쌀국수', 'フォー'],
   drinks: ['ເຄື່ອງດື່ມ', 'เครื่องดื่ม', 'Drinks', '饮品', '음료', 'ドリンク'],
+  other: ['ອື່ນໆ', 'อื่น ๆ', 'Others', '其他', '기타', 'その他'],
   ourMenu: ['ເມນູຂອງຮ້ານ', 'เมนูของร้าน', 'From our kitchen', '本店菜单', '우리 가게 메뉴', '当店のメニュー'],
   items: ['{count} ລາຍການ', '{count} รายการ', '{count} items', '{count} 项', '{count}개', '{count}点'],
   grid: ['ເບິ່ງແບບຮູບ', 'ดูแบบรูป', 'Grid view', '网格视图', '격자 보기', 'グリッド表示'],
@@ -67,17 +67,10 @@ const rows = {
   completed: ['ສຳເລັດ', 'เสร็จสิ้น', 'Completed', '已完成', '완료', '完了'],
   justNow: ['ເມື່ອກີ້', 'เมื่อสักครู่', 'Just now', '刚刚', '방금', 'たった今'],
   minutesAgo: ['{count} ນາທີຜ່ານມາ', '{count} นาทีที่แล้ว', '{count} min ago', '{count}分钟前', '{count}분 전', '{count}分前'],
-  qrTitle: ['QR ເມນູຂອງໂຕະນີ້', 'QR เมนูของโต๊ะนี้', 'Your table menu QR', '本桌菜单二维码', '테이블 메뉴 QR', 'このテーブルのメニューQR'],
-  qrHint: ['ສະແກນເພື່ອເປີດເມນູ ແລະ ສັ່ງອາຫານ', 'สแกนเพื่อเปิดเมนูและสั่งอาหาร', 'Scan to open the menu and order', '扫码查看菜单并点餐', '스캔하여 메뉴를 보고 주문하세요', 'スキャンしてメニューからご注文ください'],
-  openTableMenu: ['ເປີດເມນູໂຕະນີ້', 'เปิดเมนูโต๊ะนี้', 'Open this table’s menu', '打开本桌菜单', '이 테이블 메뉴 열기', 'このテーブルのメニューを開く'],
-  qrNetwork: ['ໂທລະສັບ ແລະ ຄອມຕ້ອງໃຊ້ Wi-Fi ດຽວກັນ ແລະ ເປີດແອັບໃນຄອມໄວ້', 'มือถือและคอมต้องใช้ Wi-Fi เดียวกัน และเปิดแอปบนคอมไว้', 'Keep this app running on the computer. Connect your phone to the same Wi-Fi.', '请保持电脑上的应用运行，并让手机连接同一 Wi-Fi。', '컴퓨터에서 앱을 켜 두고 휴대폰을 같은 Wi-Fi에 연결하세요.', 'パソコンでアプリを起動したまま、スマートフォンを同じWi-Fiに接続してください。'],
-  qrLoading: ['ກຳລັງສ້າງ QR…', 'กำลังสร้าง QR…', 'Creating QR…', '正在生成二维码…', 'QR 생성 중…', 'QRを作成中…'],
   openMenu: ['ເປີດເມນູ', 'เปิดเมนู', 'Open menu', '打开菜单', '메뉴 열기', 'メニューを開く'],
   staff: ['ໜ້າພະນັກງານ', 'หน้าพนักงาน', 'Staff view', '员工界面', '직원 화면', 'スタッフ画面'],
   demo: ['ຕົ້ນແບບທົດລອງ', 'ต้นแบบทดลอง', 'Demo preview', '演示模式', '데모 미리보기', 'デモ版'],
   demoHint: ['ຍັງບໍ່ມີການຫັກເງິນ · ບັນທຶກຂໍ້ມູນທົດລອງໃນ Browser ນີ້', 'ยังไม่มีการหักเงินจริง · บันทึกข้อมูลทดลองใน Browser นี้', 'No real payment · demo data is saved in this browser', '不会实际扣款，演示数据保存在此浏览器中', '실제 결제 없음 · 데모 데이터는 이 브라우저에 저장돼요', '実際の決済はありません。デモデータはこのブラウザーに保存されます'],
-  qrDemo: ['ອໍເດີທົດລອງຍັງບໍ່ຊິງຂ້າມອຸປະກອນ', 'ออเดอร์ทดลองยังไม่ซิงก์ข้ามอุปกรณ์', 'Demo orders do not sync across devices', '演示订单不跨设备同步', '데모 주문은 기기 간 동기화되지 않아요', 'デモの注文は端末間で同期されません'],
-  qrError: ['ສ້າງ QR ບໍ່ສຳເລັດ · ໃຊ້ປຸ່ມເປີດເມນູໄດ້', 'สร้าง QR ไม่สำเร็จ · ใช้ปุ่มเปิดเมนูได้', 'QR unavailable · use the open menu button', '二维码生成失败，请点击打开菜单', 'QR 생성 실패 · 메뉴 열기를 눌러 주세요', 'QRを生成できません。メニューを開くボタンをご利用ください'],
   invalidTable: ['ບໍ່ພົບໂຕະນີ້', 'ไม่พบโต๊ะนี้', 'Table not found', '未找到该餐桌', '테이블을 찾을 수 없어요', 'テーブルが見つかりません'],
   invalidTableHint: ['ລິ້ງ QR ນີ້ໃຊ້ບໍ່ໄດ້ · ກະລຸນາສະແກນ QR ທີ່ໂຕະອີກຄັ້ງ ຫຼື ແຈ້ງພະນັກງານ', 'ลิงก์ QR นี้ใช้ไม่ได้ กรุณาสแกน QR ที่โต๊ะอีกครั้งหรือแจ้งพนักงาน', 'This QR link is not valid. Scan the QR code on your table again or ask our staff.', '此二维码链接无效，请重新扫描桌上的二维码或联系店员。', '사용할 수 없는 QR 링크예요. 테이블의 QR을 다시 스캔하거나 직원에게 문의해 주세요.', 'このQRリンクは使用できません。テーブルのQRコードを読み取り直すか、スタッフにお声がけください。'],
   sending: ['ກຳລັງສົ່ງ…', 'กำลังส่ง…', 'Sending…', '提交中…', '전송 중…', '送信中…'],
@@ -94,6 +87,14 @@ const rows = {
   next_served: ['ເສີບອາຫານແລ້ວ', 'เสิร์ฟอาหารแล้ว', 'Your food has been served', '已为您上菜', '서빙이 완료됐어요', 'お料理をお届けしました'],
   paymentNext: ['ແຈ້ງເລກໂຕະໃຫ້ພະນັກງານ · ຄົວຈະເລີ່ມຫຼັງຢືນຢັນຮັບເງິນ', 'แจ้งเลขโต๊ะกับพนักงาน ครัวจะเริ่มหลังยืนยันรับเงิน', 'Tell the cashier your table number. Preparation begins after payment is confirmed.', '请告知收银员桌号，确认收款后厨房开始制作。', '직원에게 테이블 번호를 알려 주세요. 결제 확인 후 조리가 시작돼요.', 'レジでテーブル番号をお伝えください。入金確認後に調理を始めます。'],
   kitchenNext: ['ຕິດຕາມສະຖານະຂອງແຕ່ລະອໍເດີໄດ້ດ້ານລຸ່ມ', 'ดูสถานะของแต่ละออเดอร์ได้ด้านล่าง', 'Follow each order’s status below.', '您可以在下方查看各订单状态。', '아래에서 각 주문의 상태를 확인하세요.', '各ご注文の状況は下でご確認いただけます。'],
+  call: ['ເອີ້ນ', 'เรียก', 'Call staff', '呼叫', '호출', '呼び出し'],
+  callTitle: ['ຕ້ອງການຫຍັງບໍ?', 'ต้องการอะไรไหม?', 'How can we help?', '需要什么帮助？', '무엇을 도와드릴까요?', '何かご用ですか？'],
+  callHint: ['ກົດເລືອກ ພະນັກງານຈະມາທີ່ໂຕະຂອງທ່ານ', 'กดเลือก แล้วพนักงานจะมาที่โต๊ะของคุณ', 'Tap one and a member of staff will come to your table.', '点击选择，店员会来到您的餐桌。', '하나를 누르면 직원이 테이블로 갑니다.', '選ぶとスタッフがテーブルに伺います。'],
+  callSent: ['ສົ່ງແລ້ວ · ພະນັກງານກຳລັງມາ', 'ส่งแล้ว · พนักงานกำลังมา', 'Sent · staff are on their way', '已发送，店员马上就到', '전송됨 · 직원이 곧 갑니다', '送信しました。スタッフが伺います'],
+  callCancel: ['ຍົກເລີກ', 'ยกเลิก', 'Cancel', '取消', '취소', 'キャンセル'],
+  reason_help: ['ເອີ້ນພະນັກງານ', 'เรียกพนักงาน', 'Call a staff member', '呼叫店员', '직원 호출', 'スタッフを呼ぶ'],
+  reason_pay: ['ຂໍຈ່າຍເງິນທີ່ໂຕະ', 'ขอจ่ายเงินที่โต๊ะ', 'Pay at my table', '在餐桌付款', '테이블에서 결제', '席で支払う'],
+  reason_water: ['ຂໍນ້ຳເປົ່າ', 'ขอน้ำเปล่า', 'Water, please', '请给我水', '물 주세요', 'お水をください'],
 };
 
 export const copy = (lang, key, values = {}) => {
@@ -110,4 +111,5 @@ export const menuTranslations = {
   tea: { en: 'Iced lime tea', zh: '冰青柠茶', ko: '아이스 라임티', ja: 'アイスライムティー' },
 };
 
-export const customerItemName = (item, lang) => menuTranslations[item.id]?.[lang] || item[lang] || item.lo;
+// Dishes added by the owner carry Lao, Thai and an optional English name; other languages fall back to English.
+export const customerItemName = (item, lang) => menuTranslations[item.id]?.[lang] || item[lang] || (['lo', 'th'].includes(lang) ? null : item.en) || item.lo;
