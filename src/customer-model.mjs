@@ -83,7 +83,12 @@ export function updateDemoSession(storage, current, change) {
 
 export function applyOrderAction(session, id, action, method, now = Date.now()) {
   const target = session.orders.find(order => order.id === id);
-  if (!target) return session;
+  if (!target) {
+    if (action === 'pay') throw Object.assign(new Error('The order no longer exists'), { code: 'changed' });
+    return session;
+  }
+  // A payment dialog in another tab may still show an order that has already been paid.
+  if (action === 'pay' && (target.paid || target.status !== 'pending')) throw Object.assign(new Error('The order is already paid or has changed'), { code: 'already-paid' });
   // paidAt places each payment in the cash shift that was open when it was taken.
   const paidAt = action === 'pay' && target.status === 'pending' ? now : target.paidAt;
   const orders = session.orders.map(order => order.id === id ? { ...order, status: nextOrderStatus(order, action), paid: action === 'pay' ? true : order.paid, paidAt, method: method || order.method } : order);
@@ -95,26 +100,44 @@ export function applyOrderAction(session, id, action, method, now = Date.now()) 
   return { ...session, orders, clearedAt: { ...session.clearedAt, [target.table]: now }, calls };
 }
 
-// Puts one order and its table's clearing time back as they were before a mistaken tap.
-export function undoOrderAction(session, previous, clearedAt, status) {
+// Puts one order and the table state changed by its action back after a mistaken tap.
+export function undoOrderAction(session, previous, clearedAt, status, callBefore) {
   const current = session.orders.find(order => order.id === previous.id);
   // Someone has moved the order on since the tap; putting it back would erase their step.
   if (!current || (status && current.status !== status)) throw Object.assign(new Error('The order has changed'), { code: 'changed' });
+  // Closed shift totals are final; a late Undo from another tab must not remove one of its payments.
+  if (current.paid && !previous.paid && session.shifts?.some(shift => shift.closedAt !== undefined
+    && current.paidAt >= shift.openedAt && current.paidAt <= shift.closedAt)) {
+    throw Object.assign(new Error('The payment belongs to a closed shift'), { code: 'shift-closed' });
+  }
   const restored = { ...session.clearedAt };
   if (clearedAt === undefined) delete restored[previous.table];
   else restored[previous.table] = clearedAt;
-  return { ...session, orders: session.orders.map(order => order.id === previous.id ? previous : order), clearedAt: restored };
+  // Only a last-order close clears calls; a newer request always takes precedence.
+  const restoreCall = callBefore && previous.status === 'served' && current.status === 'completed'
+    && session.clearedAt[previous.table] !== clearedAt && !session.calls?.[previous.table];
+  return { ...session, orders: session.orders.map(order => order.id === previous.id ? previous : order), clearedAt: restored,
+    ...(restoreCall ? { calls: { ...session.calls, [previous.table]: callBefore } } : {}) };
 }
 
-export function commitCheckout(storage, session, table, source, createdAt = Date.now()) {
+// Normalize object keys so an unchanged review stays valid after storage reloads.
+export function checkoutReviewKey(table, cart, effectiveMethod) {
+  return JSON.stringify([table, cart, effectiveMethod], (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+}
+
+export function commitCheckout(storage, session, table, source, createdAt = Date.now(), reviewedKey) {
   if (!Number.isInteger(table)) throw new Error('Unknown table');
   const draft = session.drafts[table];
+  // A basket may still hold a payment method the owner has since switched off.
+  const enabled = session.settings?.methods;
+  const method = enabled?.length && !enabled.includes(draft?.method) ? enabled[0] : draft?.method;
+  if (reviewedKey !== undefined && reviewedKey !== checkoutReviewKey(table, draft?.cart ?? [], method)) {
+    throw Object.assign(new Error('The basket changed after it was reviewed'), { code: 'cart-changed' });
+  }
   if (!draft?.cart.length) throw new Error('The basket is empty');
   if (draft.cart.some(item => session.soldOut?.includes(item.id))) throw Object.assign(new Error('Sold-out dishes are in the basket'), { code: 'sold-out' });
   const orderId = String(Math.max(1024, ...session.orders.map(order => Number(order.id))) + 1);
-  // A basket may still hold a payment method the owner has since switched off.
-  const enabled = session.settings?.methods;
-  const method = enabled?.length && !enabled.includes(draft.method) ? enabled[0] : draft.method;
   const order = { id: orderId, table, items: draft.cart, source, status: 'pending', paid: false, method, createdAt };
   const next = {
     ...session,

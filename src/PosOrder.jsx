@@ -1,19 +1,36 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Banknote, ChevronDown, Minus, Pencil, Plus, Search, Send, ShoppingBag, Star, X } from 'lucide-react';
+import { ArrowLeft, Banknote, ChevronDown, Minus, Pencil, Plus, Search, Save, ShoppingBag, Star, X } from 'lucide-react';
 import { EmptyState, itemName, money, pad, useL } from './staff-ui';
-import { addCartItem, orderTotal, updateCartItem } from './order-model.mjs';
+import { addCartItem, orderTotal, quotedItemPrice, updateCartItem } from './order-model.mjs';
 import { customerCategory } from './customer-model.mjs';
 
-const largeExtra = 10000;
 const categoryLabel = (id, t) => ({ all: t('ທັງໝົດ', 'ทั้งหมด'), khao: t('ເຂົ້າປຽກ', 'ข้าวเปียก'), pho: t('ເຝີ', 'เฝอ'), drinks: t('ເຄື່ອງດື່ມ', 'เครื่องดื่ม'), other: t('ອື່ນໆ', 'อื่น ๆ') }[id]);
 
+export function savePosCart(onUpdateDraft, update, pending = { current: null }, afterSave) {
+  const previous = pending.current;
+  if (previous && previous.update !== update && !savePosCart(onUpdateDraft, previous.update, pending, previous.afterSave)) return false;
+  try {
+    if (onUpdateDraft(current => ({ ...current, cart: update(current.cart) })) === false) {
+      pending.current = { update, afterSave };
+      return false;
+    }
+  } catch {
+    pending.current = { update, afterSave };
+    return false;
+  }
+  pending.current = null;
+  afterSave?.();
+  return true;
+}
+export const restorePosCart = (current, removed) => removed.reduce((rows, item) => addCartItem(rows, item), current);
+
 // Basket lines use the same shape as customer orders, so the kitchen and reports read both alike.
-function withChoices(row, dish, changes) {
+function withChoices(row, changes) {
   const next = { ...row, ...changes };
   const note = (next.customizationNote ?? '').trim();
   return {
     ...next,
-    price: dish.price + (next.size === 'large' ? largeExtra : 0),
+    price: quotedItemPrice(row, next.size),
     note: [next.noHerbs ? 'ບໍ່ໃສ່ຜັກ' : '', note].filter(Boolean).join(' · '),
     noteTh: [next.noHerbs ? 'ไม่ใส่ผัก' : '', note].filter(Boolean).join(' · '),
   };
@@ -25,6 +42,10 @@ export function PosOrder({ table, tables, menu, draft, onTable, onUpdateDraft, o
   const [query, setQuery] = useState('');
   const [noteFor, setNoteFor] = useState(null);
   const [error, setError] = useState('');
+  const [retryChange, setRetryChange] = useState(null);
+  const pendingChange = useRef(null);
+  const [cleared, setCleared] = useState(null);
+  useEffect(() => { setError(''); pendingChange.current = null; setRetryChange(null); setCleared(null); setNoteFor(null); }, [table]);
   const cart = draft.cart;
   const dishes = Object.fromEntries(menu.map(dish => [dish.id, dish]));
   const categories = ['all', ...['khao', 'pho', 'drinks', 'other'].filter(id => menu.some(dish => customerCategory(dish) === id))];
@@ -40,13 +61,34 @@ export function PosOrder({ table, tables, menu, draft, onTable, onUpdateDraft, o
     watch.observe(checkoutRef.current);
     return () => watch.disconnect();
   }, []);
-  const setCart = update => { setError(''); onUpdateDraft(current => ({ ...current, cart: update(current.cart) })); };
-  const add = dish => setCart(rows => addCartItem(rows, withChoices({ ...dish, size: 'regular', quantity: 1, noHerbs: false, customizationNote: '' }, dish, {})));
-  const change = (row, changes) => setCart(rows => updateCartItem(rows, row.key, withChoices(row, dishes[row.id] ?? row, changes)));
+  function setCart(update, afterSave) {
+    const saved = savePosCart(onUpdateDraft, update, pendingChange, afterSave);
+    setRetryChange(pendingChange.current);
+    if (!saved) {
+      setError(t('ບັນທຶກບໍ່ສຳເລັດ · ລາຍການເດີມຍັງຢູ່ · ກະລຸນາລອງໃໝ່', 'บันทึกไม่สำเร็จ · รายการเดิมยังอยู่ · กรุณาลองใหม่'));
+      return false;
+    }
+    setError('');
+    return true;
+  }
+  const add = dish => setCart(rows => addCartItem(rows, withChoices({ ...dish, size: 'regular', quantity: 1, noHerbs: false, customizationNote: '' }, {})));
+  const change = (row, changes, afterSave) => setCart(rows => {
+    const latest = rows.find(item => item.key === row.key);
+    return latest ? updateCartItem(rows, row.key, withChoices(latest, changes)) : rows;
+  }, afterSave);
   const setQuantity = (row, quantity) => setCart(rows => quantity < 1 ? rows.filter(item => item.key !== row.key) : rows.map(item => item.key === row.key ? { ...item, quantity } : item));
+  function clearCart() {
+    let removed;
+    setCart(rows => { removed = rows; return []; }, () => { setCleared({ table, items: removed }); setNoteFor(null); });
+  }
+  function undoClear() {
+    if (cleared?.table !== table) return;
+    setCart(rows => restorePosCart(rows, cleared.items), () => setCleared(null));
+  }
   function send(pay) {
-    const message = onSubmit(pay);
-    if (message) setError(message);
+    if (pendingChange.current) return;
+    try { const message = onSubmit(pay); if (message) setError(message); }
+    catch { setError(t('ສົ່ງອໍເດີບໍ່ສຳເລັດ · ກະລຸນາລອງໃໝ່', 'ส่งออเดอร์ไม่สำเร็จ · กรุณาลองใหม่')); }
   }
   return <section className="pos-screen">
     <div className="pos-menu">
@@ -69,26 +111,37 @@ export function PosOrder({ table, tables, menu, draft, onTable, onUpdateDraft, o
       })}</div> : <EmptyState icon={Search} title={t('ບໍ່ພົບເມນູ', 'ไม่พบเมนู')} text={t('ລອງຄຳຄົ້ນຫາອື່ນ', 'ลองคำค้นหาอื่น')}/>}
     </div>
     <aside className="pos-cart" aria-label={t('ລາຍການທີ່ສັ່ງ', 'รายการที่สั่ง')}>
-      <div className="pos-cart-head"><h2>{t('ໂຕະ', 'โต๊ะ')} {pad(table)}</h2><span>{count} {t('ລາຍການ', 'รายการ')}</span>{cart.length > 0 && <button className="danger-link" onClick={() => setCart(() => [])}>{t('ລ້າງ', 'ล้าง')}</button>}</div>
+      <div className="pos-cart-head"><h2>{t('ໂຕະ', 'โต๊ะ')} {pad(table)}</h2><span>{count} {t('ລາຍການ', 'รายการ')}</span>{cart.length > 0 && <button className="danger-link" onClick={clearCart}>{t('ລ້າງ', 'ล้าง')}</button>}</div>
+      {cleared?.table === table && <div className="pos-clear-recovery" role="status"><span>{t('ລ້າງລາຍການແລ້ວ', 'ล้างรายการแล้ว')}</span><button className="text-link" onClick={undoClear}>{t('ເອົາຄືນ', 'เอาคืน')}</button></div>}
       {cart.length ? <div className="pos-lines">{cart.map(row => {
         const dish = dishes[row.id];
         const unavailable = !dish?.available;
         return <article className={`pos-line ${unavailable ? 'is-sold-out' : ''}`} key={row.key}>
           <div className="pos-line-top"><strong>{itemName(row, lang)}</strong><span>{money(row.price * row.quantity)}</span></div>
-          {unavailable ? <p className="pos-line-warning">{t('ເມນູນີ້ໝົດແລ້ວ · ກະລຸນາລຶບອອກ', 'เมนูนี้หมดแล้ว · กรุณาลบออก')}</p> : <div className="pos-line-options">
+          <p className="pos-choice-summary">{[row.category !== 'drinks' ? (row.size === 'large' ? t('ພິເສດ', 'พิเศษ') : t('ທຳມະດາ', 'ธรรมดา')) : '', row.noHerbs ? t('ບໍ່ໃສ່ຜັກ', 'ไม่ใส่ผัก') : ''].filter(Boolean).join(' · ')}</p>
+          {(row.customizationNote || (row.note && !row.noHerbs)) && <p className="pos-special-note">{row.customizationNote || (lang === 'th' ? row.noteTh || row.note : row.note)}</p>}
+          {unavailable && <p className="pos-line-warning">{t('ເມນູນີ້ໝົດແລ້ວ · ກະລຸນາລຶບອອກ', 'เมนูนี้หมดแล้ว · กรุณาลบออก')}</p>}
+          <div className="pos-line-actions">
+          {!unavailable && <details className="pos-edit">
+            <summary aria-label={`${t('ແກ້ໄຂ', 'แก้ไข')} ${itemName(row, lang)}`}><Pencil size={16}/>{t('ແກ້ໄຂ', 'แก้ไข')}<ChevronDown size={16}/></summary>
+            <div className="pos-line-options">
             {row.category !== 'drinks' && <div className="pos-size" role="group" aria-label={t('ຂະໜາດ', 'ขนาด')}>{['regular', 'large'].map(size => <button key={size} className={row.size === size ? 'selected' : ''} aria-pressed={row.size === size} onClick={() => change(row, { size })}>{size === 'large' ? t('ພິເສດ', 'พิเศษ') : t('ທຳມະດາ', 'ธรรมดา')}</button>)}</div>}
             {row.category !== 'drinks' && <button className={`pos-chip ${row.noHerbs ? 'selected' : ''}`} aria-pressed={row.noHerbs} onClick={() => change(row, { noHerbs: !row.noHerbs })}>{t('ບໍ່ໃສ່ຜັກ', 'ไม่ใส่ผัก')}</button>}
             <button className={`pos-chip ${row.customizationNote ? 'selected' : ''}`} onClick={() => setNoteFor(noteFor === row.key ? null : row.key)}><Pencil size={14}/>{row.customizationNote || t('ໝາຍເຫດ', 'หมายเหตุ')}</button>
-          </div>}
-          {noteFor === row.key && <input className="pos-note" autoFocus maxLength={80} defaultValue={row.customizationNote} placeholder={t('ເຊັ່ນ ບໍ່ເຜັດ, ໃສ່ຖົງ', 'เช่น ไม่เผ็ด, ใส่ถุง')} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} onBlur={event => { change(row, { customizationNote: event.target.value }); setNoteFor(null); }}/>}
+            </div>
+            {noteFor === row.key && <input className="pos-note" aria-label={t('ໝາຍເຫດອາຫານ', 'หมายเหตุอาหาร')} autoFocus maxLength={80} defaultValue={row.customizationNote} placeholder={t('ເຊັ່ນ ບໍ່ເຜັດ, ໃສ່ຖົງ', 'เช่น ไม่เผ็ด, ใส่ถุง')} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} onBlur={event => change(row, { customizationNote: event.target.value }, () => setNoteFor(null))}/>}
+          </details>}
           <div className="stepper"><button aria-label={t('ຫຼຸດຈຳນວນ', 'ลดจำนวน')} onClick={() => setQuantity(row, row.quantity - 1)}>{row.quantity === 1 ? <X size={17}/> : <Minus size={17}/>}</button><b aria-live="polite">{row.quantity}</b><button aria-label={t('ເພີ່ມຈຳນວນ', 'เพิ่มจำนวน')} disabled={unavailable || row.quantity >= 30} onClick={() => setQuantity(row, row.quantity + 1)}><Plus size={17}/></button></div>
+          </div>
         </article>;
       })}</div> : <div className="pos-empty"><ShoppingBag size={36} strokeWidth={1.4}/><p>{t('ກົດເມນູດ້ານຊ້າຍເພື່ອເພີ່ມ · ກົດຊ້ຳເພື່ອເພີ່ມຈຳນວນ', 'กดเมนูด้านซ้ายเพื่อเพิ่ม · กดซ้ำเพื่อเพิ่มจำนวน')}</p></div>}
       <div className="pos-checkout" ref={checkoutRef}>
         {(error || soldOut) && <p className="form-error" role="alert">{error || t('ມີເມນູທີ່ໝົດໃນລາຍການ · ກະລຸນາລຶບອອກກ່ອນສົ່ງ', 'มีเมนูที่หมดในรายการ · กรุณาลบออกก่อนส่ง')}</p>}
+        {retryChange && <button className="button secondary full" onClick={() => setCart(retryChange.update, retryChange.afterSave)}>{t('ລອງບັນທຶກໃໝ່', 'ลองบันทึกใหม่')}</button>}
         <div className="pos-total"><span>{t('ລວມທັງໝົດ', 'รวมทั้งหมด')}</span><strong>{money(orderTotal(cart))} <small>₭</small></strong></div>
-        <button className="button primary full" disabled={!cart.length || soldOut} onClick={() => send(true)}><Banknote size={20}/>{t('ສົ່ງອໍເດີ ແລະ ຮັບເງິນ', 'ส่งออเดอร์และรับเงิน')}</button>
-        <button className="button secondary full" disabled={!cart.length || soldOut} onClick={() => send(false)}><Send size={18}/>{t('ສົ່ງອໍເດີ · ຮັບເງິນທີຫຼັງ', 'ส่งออเดอร์ · รับเงินทีหลัง')}</button>
+        <button className="button primary full" disabled={!cart.length || soldOut || Boolean(retryChange)} onClick={() => send(true)}><Banknote size={20}/>{t('ສົ່ງອໍເດີ ແລະ ຮັບເງິນ', 'ส่งออเดอร์และรับเงิน')}</button>
+        <button className="button secondary full" disabled={!cart.length || soldOut || Boolean(retryChange)} onClick={() => send(false)}><Save size={18}/>{t('ບັນທຶກລໍຖ້າຮັບເງິນ', 'บันทึกรอรับเงิน')}</button>
+        <p className="pos-payment-hint">{t('ຢືນຢັນຮັບເງິນແລ້ວ ອໍເດີຈຶ່ງເຂົ້າຄົວ', 'ยืนยันรับเงินแล้ว ออเดอร์จึงเข้าครัว')}</p>
       </div>
     </aside>
     {count > 0 && !checkoutVisible && <button className="pos-jump" onClick={() => checkoutRef.current.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'end' })}><b>{count}</b><span>{t('ເບິ່ງລາຍການ ແລະ ສົ່ງ', 'ดูรายการและส่ง')}</span>{money(orderTotal(cart))} ₭<ChevronDown size={18}/></button>}

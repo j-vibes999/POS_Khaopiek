@@ -1,0 +1,136 @@
+/* Reference information stays quiet; names, tables and the next action lead. */
+.bo-inline-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 26px;
+  margin: 0 0 24px;
+  padding: 0 0 18px;
+  border-bottom: 1px solid var(--line);
+  color: #52614f;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.bo-inline-counts > div { display: flex; align-items: baseline; gap: 8px; }
+.bo-inline-counts dt { margin: 0; }
+.bo-inline-counts dd { margin: 0; color: #273b32; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.bo-staff-page .staff-list { margin-bottom: 28px; }
+.bo-staff-page .staff-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 98px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.bo-staff-page .staff-row:first-child { padding-top: 0; }
+.bo-staff-page .staff-row .avatar { width: 48px; height: 48px; font-size: 19px; }
+.bo-staff-page .staff-row.is-inactive .avatar { background: #e6e9e2; color: #52614f; }
+.bo-staff-page .staff-card-body { gap: 8px; }
+.bo-staff-page .staff-card-body > strong { font-size: 18px; line-height: 1.6; overflow-wrap: anywhere; }
+.bo-staff-page .staff-card-body em { font-size: 14px; }
+.bo-staff-page .staff-row-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.bo-staff-page .staff-meta { font-size: 14px; line-height: 1.7; color: #52614f; }
+.bo-staff-page .role-chip { font-size: 14px; }
+.bo-staff-page .staff-edit { flex-shrink: 0; min-height: 48px; padding: 10px 16px; font-size: 15px; }
+.bo-staff-page .staff-permissions { border-top: 1px solid var(--line); }
+.bo-staff-page .staff-permissions > summary {
+  padding: 16px 0;
+  min-height: 56px;
+  color: var(--green);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.7;
+}
+.bo-staff-page .staff-permissions > summary:focus-visible { outline: 3px solid #bd7b46; outline-offset: 4px; }
+.bo-staff-page .staff-permissions > p { margin: 0 0 18px; color: #52614f; font-size: 14px; line-height: 1.7; }
+.bo-staff-page .permission-table thead th:first-child { font-size: 14px; }
+.bo-staff-page .permission-table th, .bo-staff-page .permission-table td { padding-block: 14px; }
+
+.bo-tables-page .page-heading p, .bo-staff-page .page-heading p, .bo-settings-page .page-heading p { font-size: 14px; }
+.bo-tables-page .setup-number small, .bo-tables-page .badge, .bo-tables-page .setup-footer { font-size: 14px; }
+.bo-tables-page .setup-footer { line-height: 1.7; }
+.bo-tables-page .setup-card > footer > .button { min-height: 48px; font-size: 14px; }
+.bo-tables-page .setup-card > footer > .icon-button { width: 48px; height: 48px; }
+.bo-tables-page .danger-link { min-height: 48px; }
+
+/* Settings use one continuous working surface with a simple section selector. */
+.bo-settings-page .settings-layout { display: block; }
+.bo-settings-page .settings-nav {
+  position: static;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0 24px;
+  overflow: visible;
+  margin: 0 0 30px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+.bo-settings-page .settings-nav > button {
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 58px;
+  gap: 9px;
+  padding: 12px 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: #52614f;
+}
+.bo-settings-page .settings-nav > button strong { font-size: 16px; line-height: 1.6; font-weight: 500; }
+.bo-settings-page .settings-nav > button:hover { color: var(--green); border-bottom-color: #9caf9b; background: transparent; }
+.bo-settings-page .settings-nav > button.selected { color: var(--green); border-bottom-color: var(--green); background: transparent; }
+.bo-settings-page .settings-nav > button.selected strong { font-weight: 600; }
+.bo-settings-page .settings-panel > .bo-card { padding: 0; border: 0; border-radius: 0; background: transparent; margin: 0; }
+.bo-settings-page .bo-card-head p { max-width: 70ch; font-size: 14px; color: #52614f; }
+.bo-settings-page .settings-shop { grid-template-columns: minmax(0, 1fr) 240px; gap: 36px; }
+.bo-settings-page .shop-preview { min-width: 0; border-left: 1px solid var(--line); padding-left: 28px; }
+.bo-settings-page .shop-preview > small { font-size: 14px; line-height: 1.7; color: #52614f; margin-bottom: 18px; }
+.bo-settings-page .shop-preview-card { align-items: flex-start; gap: 7px; padding: 0; border: 0; border-radius: 0; text-align: left; background: transparent; }
+.bo-settings-page .shop-preview-card .bo-icon { width: auto; height: auto; margin-bottom: 4px; border-radius: 0; background: transparent; }
+.bo-settings-page .shop-preview-card > span:not(.bo-icon):not(.shop-preview-qr) { font-size: 14px; line-height: 1.7; color: #52614f; overflow-wrap: anywhere; }
+.bo-settings-page .method-list { gap: 0; }
+.bo-settings-page .method-card { min-height: 90px; gap: 18px; padding: 20px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; }
+.bo-settings-page .method-card.is-on { border-color: var(--line); background: transparent; }
+.bo-settings-page .method-card > .bo-icon { width: 28px; height: auto; background: transparent; border-radius: 0; }
+.bo-settings-page .method-card small { font-size: 14px; line-height: 1.7; color: #52614f; }
+.bo-settings-page .method-card .switch { flex-shrink: 0; width: 56px; min-width: 56px; height: 48px; min-height: 48px; border-radius: 8px; background: transparent; }
+.bo-settings-page .method-card .switch::before { content: ''; position: absolute; inset: 10px 2px; border-radius: 999px; background: #c6cfc0; }
+.bo-settings-page .method-card .switch.on::before { background: var(--green); }
+.bo-settings-page .method-card .switch > span { width: 20px; height: 20px; top: 14px; left: 6px; }
+.bo-settings-page .method-card .switch.on > span { translate: 24px 0; }
+.bo-settings-page .method-card .switch:disabled { opacity: 1; }
+.bo-settings-page .activity-day { font-size: 14px; color: #52614f; padding-top: 20px; }
+.bo-settings-page .activity-text small, .bo-settings-page .activity-row time { font-size: 14px; line-height: 1.7; color: #52614f; }
+.bo-settings-page .activity-row { gap: 12px; padding-block: 16px; }
+.bo-settings-page .activity-icon { width: 28px; height: 28px; border-radius: 6px; background: transparent; }
+.bo-settings-page .danger-zone .bo-card-head { max-width: 70ch; }
+
+.bo-refinement-dialog .form-field small, .bo-refinement-dialog .toggle-row small { font-size: 14px; line-height: 1.7; color: #52614f; }
+.bo-refinement-dialog .icon-button { width: 48px; min-width: 48px; height: 48px; min-height: 48px; }
+.bo-refinement-dialog .text-link, .bo-refinement-dialog .quick-amounts > button { min-height: 48px; }
+.bo-refinement-dialog .toggle-row { min-height: 72px; }
+
+@media (max-width: 1020px) {
+  .bo-settings-page .settings-shop { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  .bo-settings-page .shop-preview { border-left: 0; border-top: 1px solid var(--line); padding: 24px 0 0; }
+}
+@media (max-width: 600px) {
+  .bo-inline-counts { gap: 6px 20px; margin-bottom: 20px; }
+  .bo-staff-page .staff-row { gap: 12px; padding-block: 18px; }
+  .bo-staff-page .staff-row .avatar { width: 40px; height: 40px; font-size: 17px; }
+  .bo-staff-page .staff-card-body > strong { font-size: 17px; }
+  .bo-staff-page .staff-edit { gap: 6px; padding-inline: 10px; }
+  .bo-settings-page .settings-nav { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; margin-bottom: 24px; }
+  .bo-settings-page .settings-nav > button { min-height: 56px; padding-block: 10px; }
+  .bo-settings-page .settings-nav > button strong { font-size: 15px; }
+  .bo-settings-page .method-card { gap: 12px; }
+  .bo-settings-page .activity-row { flex-wrap: wrap; }
+  .bo-settings-page .activity-text { flex-basis: calc(100% - 40px); }
+  .bo-settings-page .activity-row time { margin-left: 40px; }
+}

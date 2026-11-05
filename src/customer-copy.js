@@ -30,6 +30,12 @@ const rows = {
   cart: ['ກະຕ່າຂອງທ່ານ', 'ตะกร้าของคุณ', 'Your basket', '购物篮', '장바구니', 'カート'],
   viewCart: ['ເບິ່ງກະຕ່າ', 'ดูตะกร้า', 'View basket', '查看购物篮', '장바구니 보기', 'カートを見る'],
   orderNow: ['ສັ່ງເລີຍ', 'สั่งเลย', 'Place order', '提交订单', '주문하기', '注文する'],
+  confirmOrder: ['ຢືນຢັນອໍເດີ', 'ยืนยันออเดอร์', 'Confirm order', '确认订单', '주문 확정', '注文を確定'],
+  reviewOrder: ['ກວດສອບອໍເດີ', 'ตรวจสอบออเดอร์', 'Review order', '核对订单', '주문 내용 확인', '注文内容を確認'],
+  confirmOrderHint: ['ກວດເລກໂຕະ ລາຍການອາຫານ ແລະ ຍອດລວມກ່ອນສົ່ງ', 'ตรวจสอบเลขโต๊ะ รายการอาหาร และยอดรวมก่อนส่ง', 'Check your table, dishes and total before sending', '提交前请核对桌号、菜品和总金额。', '보내기 전에 테이블 번호, 메뉴, 총액을 확인해 주세요.', '送信前にテーブル番号、料理、合計金額をご確認ください。'],
+  backToCart: ['ກັບໄປກະຕ່າ', 'กลับไปที่ตะกร้า', 'Back to basket', '返回购物篮', '장바구니로 돌아가기', 'カートに戻る'],
+  sendingOrder: ['ກຳລັງສົ່ງອໍເດີ…', 'กำลังส่งออเดอร์…', 'Sending order…', '正在提交订单…', '주문 전송 중…', '注文を送信中…'],
+  cartChanged: ['ລາຍການໃນກະຕ່າປ່ຽນແລ້ວ · ກະລຸນາກວດອີກຄັ້ງກ່ອນຢືນຢັນ', 'รายการในตะกร้าเปลี่ยนแล้ว กรุณาตรวจสอบอีกครั้งก่อนยืนยัน', 'Your basket changed. Please review it again before confirming.', '购物篮已更新，请重新核对后再确认。', '장바구니가 변경됐어요. 확정하기 전에 다시 확인해 주세요.', 'カートの内容が変更されました。確定前にもう一度ご確認ください。'],
   orderMore: ['ສັ່ງເພີ່ມ', 'สั่งเพิ่ม', 'Add more', '继续点餐', '더 담기', '追加する'],
   total: ['ລວມທັງໝົດ', 'รวมทั้งหมด', 'Total', '合计', '총액', '合計'],
   due: ['ຍອດທີ່ຕ້ອງຈ່າຍ', 'ยอดที่ต้องจ่าย', 'Amount due', '待付金额', '결제할 금액', 'お支払い金額'],
@@ -91,7 +97,9 @@ const rows = {
   callTitle: ['ຕ້ອງການຫຍັງບໍ?', 'ต้องการอะไรไหม?', 'How can we help?', '需要什么帮助？', '무엇을 도와드릴까요?', '何かご用ですか？'],
   callHint: ['ກົດເລືອກ ພະນັກງານຈະມາທີ່ໂຕະຂອງທ່ານ', 'กดเลือก แล้วพนักงานจะมาที่โต๊ะของคุณ', 'Tap one and a member of staff will come to your table.', '点击选择，店员会来到您的餐桌。', '하나를 누르면 직원이 테이블로 갑니다.', '選ぶとスタッフがテーブルに伺います。'],
   callSent: ['ສົ່ງແລ້ວ · ພະນັກງານກຳລັງມາ', 'ส่งแล้ว · พนักงานกำลังมา', 'Sent · staff are on their way', '已发送，店员马上就到', '전송됨 · 직원이 곧 갑니다', '送信しました。スタッフが伺います'],
+  callSaveFailed: ['ບັນທຶກຄຳຂໍບໍ່ສຳເລັດ · ກະລຸນາລອງໃໝ່', 'บันทึกคำขอไม่สำเร็จ กรุณาลองใหม่', 'Could not save your request. Please try again.', '无法保存您的请求，请重试。', '요청을 저장하지 못했습니다. 다시 시도해 주세요.', 'リクエストを保存できませんでした。もう一度お試しください。'],
   callCancel: ['ຍົກເລີກ', 'ยกเลิก', 'Cancel', '取消', '취소', 'キャンセル'],
+  retry: ['ລອງໃໝ່', 'ลองใหม่', 'Try again', '重试', '다시 시도', 'もう一度試す'],
   reason_help: ['ເອີ້ນພະນັກງານ', 'เรียกพนักงาน', 'Call a staff member', '呼叫店员', '직원 호출', 'スタッフを呼ぶ'],
   reason_pay: ['ຂໍຈ່າຍເງິນທີ່ໂຕະ', 'ขอจ่ายเงินที่โต๊ะ', 'Pay at my table', '在餐桌付款', '테이블에서 결제', '席で支払う'],
   reason_water: ['ຂໍນ້ຳເປົ່າ', 'ขอน้ำเปล่า', 'Water, please', '请给我水', '물 주세요', 'お水をください'],
@@ -112,4 +120,6 @@ export const menuTranslations = {
 };
 
 // Dishes added by the owner carry Lao, Thai and an optional English name; other languages fall back to English.
-export const customerItemName = (item, lang) => menuTranslations[item.id]?.[lang] || item[lang] || (['lo', 'th'].includes(lang) ? null : item.en) || item.lo;
+export const customerItemName = (item, lang) => item[lang] || menuTranslations[item.id]?.[lang] || (['lo', 'th'].includes(lang) ? null : item.en) || item.lo;
+// Search and display resolve the same name, including optional blank store translations.
+export const customerMenuItem = item => ({ ...item, ...Object.fromEntries(languages.map(({ id }) => [id, customerItemName(item, id)])) });

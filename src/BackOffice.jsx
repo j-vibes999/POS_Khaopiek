@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Banknote, BellRing, Check, CheckCircle2, ChefHat, ChevronRight, ClipboardList, CreditCard, Eye, EyeOff, Flame, History, LogIn, MapPin, Minus, Pencil, Plus, Printer, QrCode, RotateCcw, Settings, Store, Undo2, UserCog, Users, Utensils, Wallet } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Banknote, BellRing, Check, CheckCircle2, ChefHat, ChevronRight, ClipboardList, CreditCard, Eye, EyeOff, Flame, History, LockKeyhole, LogIn, MapPin, Minus, Pencil, Plus, Printer, QrCode, RotateCcw, Settings, Store, Undo2, UserCog, Users, Utensils, Wallet } from 'lucide-react';
 import { Dialog, EmptyState, IconButton, PageHeader, RoleChip, StatTiles, clockTime, initial, itemName, methodText, money, pad, roleText, shortDate, useL, viewIcons, viewLabel } from './staff-ui';
 import { canOpen, currentShift, maxTables, paymentMethods, roles, shiftTotals } from './backoffice-model.mjs';
 import { useMenuQrs } from './use-menu-qr';
+import './backoffice-refinements.css';
 
 const signed = amount => `${amount > 0 ? '+' : amount < 0 ? '−' : ''}${money(Math.abs(amount))}`;
 const differenceTone = amount => amount > 0 ? 'is-over' : amount < 0 ? 'is-short' : 'is-even';
@@ -67,7 +68,7 @@ export function ShiftView({ shifts, orders, user, onOpen, onClose }) {
         <p>{t('ນັບເງິນທອນທີ່ມີໃນລິ້ນຊັກກ່ອນເລີ່ມຂາຍ ແລ້ວໃສ່ຈຳນວນນີ້', 'นับเงินทอนในลิ้นชักก่อนเริ่มขาย แล้วใส่จำนวนนี้')}</p>
       </div>
       <div className="shift-start-form">
-        <label className="form-field"><span>{t('ເງິນຕັ້ງຕົ້ນ', 'เงินตั้งต้น')}</span><span className="amount-input"><input type="number" inputMode="numeric" min="0" step="1000" value={amount} onChange={event => setAmount(event.target.value)} placeholder="0"/><b>₭</b></span></label>
+        <label className="form-field"><span>{t('ເງິນຕັ້ງຕົ້ນ', 'เงินตั้งต้น')}</span><span className="amount-input"><input type="number" inputMode="numeric" min="0" step="1" value={amount} onChange={event => setAmount(event.target.value)} placeholder="0"/><b>₭</b></span></label>
         <div className="quick-amounts" role="group" aria-label={t('ຈຳນວນທີ່ໃຊ້ເລື້ອຍ', 'จำนวนที่ใช้บ่อย')}>{[200000, 500000, 1000000].map(value => <button type="button" key={value} className={amount === String(value) ? 'selected' : ''} aria-pressed={amount === String(value)} onClick={() => setAmount(String(value))}>{money(value)}</button>)}</div>
         <button className="button primary full" disabled={opening === null}><Wallet size={20}/>{t('ເປີດກະ', 'เปิดกะ')}</button>
       </div>
@@ -94,7 +95,7 @@ function CloseShiftDialog({ expected, onClose, onConfirm }) {
   return <Dialog title={t('ປິດກະ', 'ปิดกะ')} onClose={onClose} className="form-dialog">
     <form className="form-stack" onSubmit={event => { event.preventDefault(); if (value !== null) onConfirm(value); }}>
       <div className="payment-amount"><span>{t('ເງິນສົດທີ່ຄວນມີໃນລິ້ນຊັກ', 'เงินสดที่ควรมีในลิ้นชัก')}</span><strong>{money(expected)}<small> ₭</small></strong></div>
-      <label className="form-field"><span>{t('ເງິນສົດທີ່ນັບໄດ້', 'เงินสดที่นับได้')}</span><span className="amount-input"><input data-autofocus type="number" inputMode="numeric" min="0" step="500" value={counted} onChange={event => setCounted(event.target.value)} placeholder="0"/><b>₭</b></span></label>
+      <label className="form-field"><span>{t('ເງິນສົດທີ່ນັບໄດ້', 'เงินสดที่นับได้')}</span><span className="amount-input"><input data-autofocus type="number" inputMode="numeric" min="0" step="1" value={counted} onChange={event => setCounted(event.target.value)} placeholder="0"/><b>₭</b></span></label>
       {value !== null && <p className={`shift-difference ${differenceTone(difference)}`} role="status">{differenceLabel(difference, t)} · {signed(difference)} ₭</p>}
       <button className="button primary full" disabled={value === null}><CheckCircle2 size={20}/>{t('ຢືນຢັນປິດກະ', 'ยืนยันปิดกะ')}</button>
     </form>
@@ -110,17 +111,18 @@ export function TableSetupView({ tables, orders, shopName, onAdd, onRemoveLast, 
   const zoneName = table => table.zone || t('ຊັ້ນ 1', 'ชั้น 1');
   const zones = [...new Set(tables.map(zoneName))];
   const busyCount = tables.filter(table => busy(table.number)).length;
-  return <section className="full-page bo-page">
+  return <section className="full-page bo-page bo-tables-page">
     <PageHeader icon={QrCode} title={t('ໂຕະ & QR', 'โต๊ะ & QR')} text={t('ກຳນົດໂຕະ ໂຊນ ແລະ ບ່ອນນັ່ງ ແລ້ວພິມ QR ໄປວາງທຸກໂຕະ', 'กำหนดโต๊ะ โซน และที่นั่ง แล้วพิมพ์ QR ไปวางทุกโต๊ะ')}>
       <button className="button secondary" onClick={() => setPrinting(true)}><Printer size={19}/>{t('ພິມ QR ທຸກໂຕະ', 'พิมพ์ QR ทุกโต๊ะ')}</button>
       <button className="button primary" onClick={onAdd} disabled={tables.length >= maxTables}><Plus size={19}/>{t('ເພີ່ມໂຕະ', 'เพิ่มโต๊ะ')}</button>
     </PageHeader>
-    <StatTiles items={[
-      { icon: QrCode, label: t('ໂຕະທັງໝົດ', 'โต๊ะทั้งหมด'), value: tables.length },
-      { icon: Users, label: t('ບ່ອນນັ່ງ', 'ที่นั่ง'), value: tables.reduce((sum, table) => sum + table.seats, 0) },
-      { icon: MapPin, label: t('ໂຊນ', 'โซน'), value: zones.length, note: zones.join(' · ') },
-      { icon: Utensils, label: t('ມີລູກຄ້າຕອນນີ້', 'มีลูกค้าตอนนี้'), value: busyCount, note: `${t('ຫວ່າງ', 'ว่าง')} ${tables.length - busyCount} ${t('ໂຕະ', 'โต๊ะ')}`, tone: busyCount ? 'is-warm' : '' },
-    ]}/>
+    <dl className="bo-inline-counts" aria-label={t('ສະຫຼຸບໂຕະ', 'สรุปโต๊ะ')}>
+      <div><dt>{t('ໂຕະທັງໝົດ', 'โต๊ะทั้งหมด')}</dt><dd>{tables.length}</dd></div>
+      <div><dt>{t('ບ່ອນນັ່ງ', 'ที่นั่ง')}</dt><dd>{tables.reduce((sum, table) => sum + table.seats, 0)}</dd></div>
+      <div><dt>{t('ໂຊນ', 'โซน')}</dt><dd>{zones.length}</dd></div>
+      <div><dt>{t('ມີລູກຄ້າ', 'มีลูกค้า')}</dt><dd>{busyCount}</dd></div>
+      <div><dt>{t('ຫວ່າງ', 'ว่าง')}</dt><dd>{tables.length - busyCount}</dd></div>
+    </dl>
     <div className="setup-grid">{tables.map(table => <article className={`setup-card ${busy(table.number) ? 'is-busy' : ''}`} key={table.number}>
       <header><span className="setup-number"><small>{t('ໂຕະ', 'โต๊ะ')}</small>{pad(table.number)}</span><span className={`badge ${busy(table.number) ? 'pending' : 'ready'}`}><span className="status-dot"/>{busy(table.number) ? t('ມີລູກຄ້າ', 'มีลูกค้า') : t('ຫວ່າງ', 'ว่าง')}</span></header>
       <ul><li><MapPin size={16}/>{zoneName(table)}</li><li><Users size={16}/>{table.seats} {t('ບ່ອນນັ່ງ', 'ที่นั่ง')}</li></ul>
@@ -139,7 +141,7 @@ function TableDialog({ table, zones, onClose, onSave }) {
   const { t } = useL();
   const [zone, setZone] = useState(table.zone);
   const [seats, setSeats] = useState(table.seats);
-  return <Dialog title={`${t('ແກ້ໄຂໂຕະ', 'แก้ไขโต๊ะ')} ${pad(table.number)}`} onClose={onClose} className="form-dialog">
+  return <Dialog title={`${t('ແກ້ໄຂໂຕະ', 'แก้ไขโต๊ะ')} ${pad(table.number)}`} onClose={onClose} className="form-dialog bo-refinement-dialog">
     <form className="form-stack" onSubmit={event => { event.preventDefault(); onSave({ zone, seats }); }}>
       <label className="form-field"><span>{t('ໂຊນ', 'โซน')}</span><input data-autofocus value={zone} maxLength={24} placeholder={t('ຊັ້ນ 1', 'ชั้น 1')} onChange={event => setZone(event.target.value)}/></label>
       {zones.length > 0 && <div className="quick-amounts" role="group" aria-label={t('ໂຊນທີ່ມີແລ້ວ', 'โซนที่มีอยู่แล้ว')}>{zones.map(name => <button type="button" key={name} onClick={() => setZone(name)}>{name}</button>)}</div>}
@@ -176,27 +178,27 @@ const permissionViews = ['tables', 'orders', 'kitchen', 'shift', 'menu', 'table-
 export function StaffView({ staff, user, onSave }) {
   const { t } = useL();
   const [editing, setEditing] = useState(null);
-  return <section className="full-page bo-page">
+  return <section className="full-page bo-page bo-staff-page">
     <PageHeader icon={UserCog} title={t('ພະນັກງານ', 'พนักงาน')} text={t('ກຳນົດຕຳແໜ່ງ ແລະ PIN ສຳລັບເຂົ້າໃຊ້ງານ', 'กำหนดตำแหน่งและ PIN สำหรับเข้าใช้งาน')}>
       <button className="button primary" onClick={() => setEditing({ role: 'cashier', active: true })}><Plus size={19}/>{t('ເພີ່ມພະນັກງານ', 'เพิ่มพนักงาน')}</button>
     </PageHeader>
-    <StatTiles items={roles.map(role => ({ label: roleText(role, t), value: staff.filter(member => member.role === role && member.active).length, note: t('ຄົນທີ່ໃຊ້ງານໄດ້', 'คนที่ใช้งานได้'), tone: `role-${role}` }))}/>
-    <div className="staff-grid">{staff.map(member => <article className={`staff-card ${member.active ? '' : 'is-inactive'}`} key={member.id}>
+    <dl className="bo-inline-counts" aria-label={t('ພະນັກງານທີ່ໃຊ້ງານໄດ້', 'พนักงานที่ใช้งานได้')}>{roles.map(role => <div key={role}><dt>{roleText(role, t)}</dt><dd>{staff.filter(member => member.role === role && member.active).length}</dd></div>)}</dl>
+    <div className="staff-list">{staff.map(member => <article className={`staff-row ${member.active ? '' : 'is-inactive'}`} key={member.id}>
       <Avatar member={member}/>
       <div className="staff-card-body">
         <strong>{member.name}{member.id === user.id && <em>{t('ທ່ານ', 'คุณ')}</em>}</strong>
-        <RoleChip role={member.role}/>
-        <span className="staff-meta"><span className={`status-text ${member.active ? 'is-on' : ''}`}>{member.active ? t('ໃຊ້ງານໄດ້', 'ใช้งานได้') : t('ປິດການໃຊ້ງານ', 'ปิดใช้งาน')}</span> · PIN ••••</span>
+        <span className="staff-row-meta"><RoleChip role={member.role}/><span className="staff-meta"><span className={`status-text ${member.active ? 'is-on' : ''}`}>{member.active ? t('ໃຊ້ງານໄດ້', 'ใช้งานได้') : t('ປິດການໃຊ້ງານ', 'ปิดใช้งาน')}</span> · PIN ••••</span></span>
       </div>
-      <IconButton label={`${t('ແກ້ໄຂ', 'แก้ไข')} ${member.name}`} onClick={() => setEditing(member)}><Pencil size={18}/></IconButton>
+      <button className="button secondary staff-edit" aria-label={`${t('ແກ້ໄຂ', 'แก้ไข')} ${member.name}`} onClick={() => setEditing(member)}><Pencil size={18}/>{t('ແກ້ໄຂ', 'แก้ไข')}</button>
     </article>)}</div>
-    <section className="bo-card">
-      <div className="bo-card-head"><div><h2>{t('ສິດການເຂົ້າເຖິງ', 'สิทธิ์การเข้าถึง')}</h2><p>{t('ແຕ່ລະຕຳແໜ່ງເຫັນສະເພາະໜ້າທີ່ມີເຄື່ອງໝາຍ ✓', 'แต่ละตำแหน่งเห็นเฉพาะหน้าที่มีเครื่องหมาย ✓')}</p></div></div>
+    <details className="staff-permissions">
+      <summary>{t('ສິດການເຂົ້າເຖິງແຕ່ລະຕຳແໜ່ງ', 'สิทธิ์การเข้าถึงแต่ละตำแหน่ง')}</summary>
+      <p>{t('ແຕ່ລະຕຳແໜ່ງເຫັນສະເພາະໜ້າທີ່ມີເຄື່ອງໝາຍ ✓', 'แต่ละตำแหน่งเห็นเฉพาะหน้าที่มีเครื่องหมาย ✓')}</p>
       <div className="table-scroll"><table className="permission-table">
         <thead><tr><th scope="col">{t('ໜ້າຈໍ', 'หน้าจอ')}</th>{roles.map(role => <th scope="col" key={role}><RoleChip role={role}/></th>)}</tr></thead>
         <tbody>{permissionViews.map(view => { const Icon = viewIcons[view]; return <tr key={view}><th scope="row"><Icon size={17}/>{viewLabel(view, t)}</th>{roles.map(role => <td key={role}>{canOpen(role, view) ? <span className="permission-yes" aria-label={t('ເຂົ້າໄດ້', 'เข้าได้')}><Check size={16}/></span> : <span className="permission-no" aria-label={t('ເຂົ້າບໍ່ໄດ້', 'เข้าไม่ได้')}>–</span>}</td>)}</tr>; })}</tbody>
       </table></div>
-    </section>
+    </details>
     {editing && <StaffDialog member={editing} isSelf={editing.id === user.id} onClose={() => setEditing(null)} onSave={member => { const error = onSave(member); if (!error) setEditing(null); return error; }}/>}
   </section>;
 }
@@ -219,7 +221,7 @@ function StaffDialog({ member, isSelf, onClose, onSave }) {
     const code = onSave({ id: member.id, name, role, pin, active });
     if (code) setError(messages[code] ?? t('ບັນທຶກບໍ່ສຳເລັດ · ກະລຸນາລອງໃໝ່', 'บันทึกไม่สำเร็จ · กรุณาลองใหม่'));
   }
-  return <Dialog title={member.id ? t('ແກ້ໄຂພະນັກງານ', 'แก้ไขพนักงาน') : t('ເພີ່ມພະນັກງານ', 'เพิ่มพนักงาน')} onClose={onClose} className="form-dialog">
+  return <Dialog title={member.id ? t('ແກ້ໄຂພະນັກງານ', 'แก้ไขพนักงาน') : t('ເພີ່ມພະນັກງານ', 'เพิ่มพนักงาน')} onClose={onClose} className="form-dialog bo-refinement-dialog">
     <form className="form-stack" onSubmit={submit}>
       <label className="form-field"><span>{t('ຊື່', 'ชื่อ')}</span><input data-autofocus value={name} maxLength={40} onChange={event => { setName(event.target.value); setError(''); }}/></label>
       <fieldset className="form-field"><legend>{t('ຕຳແໜ່ງ', 'ตำแหน่ง')}</legend>
@@ -239,43 +241,58 @@ function StaffDialog({ member, isSelf, onClose, onSave }) {
 
 export function SwitchUserDialog({ staff, currentId, onSignIn, onClose }) {
   const { t } = useL();
-  const [selected, setSelected] = useState(null);
+  return <Dialog title={t('ສະຫຼັບຜູ້ໃຊ້', 'สลับผู้ใช้')} onClose={onClose} className="form-dialog"><StaffSignIn staff={staff} currentId={currentId} onSignIn={onSignIn} onClose={onClose}/></Dialog>;
+}
+
+export function StaffAccessScreen({ staff, onSignIn }) {
+  const { t } = useL();
+  const heading = useRef();
+  useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
+  return <main className="staff-access-page"><section className="staff-access-panel" aria-labelledby="staff-access-title">
+    <div className="staff-access-heading"><LockKeyhole size={30} aria-hidden="true"/><h1 ref={heading} tabIndex={-1} id="staff-access-title">{t('ບັນຊີນີ້ໃຊ້ງານບໍ່ໄດ້ແລ້ວ', 'บัญชีนี้ใช้งานไม่ได้แล้ว')}</h1><p>{t('ກະລຸນາເລືອກຜູ້ໃຊ້ທີ່ໃຊ້ງານໄດ້ ແລ້ວໃສ່ PIN ເພື່ອເຂົ້າໃໝ່', 'กรุณาเลือกบัญชีที่ยังใช้งานได้ แล้วใส่ PIN เพื่อเข้าสู่ระบบใหม่')}</p></div>
+    <StaffSignIn staff={staff} onSignIn={onSignIn}/>
+  </section></main>;
+}
+
+function StaffSignIn({ staff, currentId, onSignIn, onClose }) {
+  const { t } = useL();
+  const [selectedId, setSelectedId] = useState(null);
+  const selected = staff.find(member => member.id === selectedId && member.active);
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
   function submit(event) {
     event.preventDefault();
-    if (pin === selected.pin) onSignIn(selected);
-    else { setError(true); setPin(''); }
+    if (pin !== selected.pin || onSignIn(selected) === false) { setError(true); setPin(''); }
   }
-  return <Dialog title={t('ສະຫຼັບຜູ້ໃຊ້', 'สลับผู้ใช้')} onClose={onClose} className="form-dialog">
+  return <>
     {selected ? <form className="form-stack" onSubmit={submit}>
-      <button type="button" className="text-link" onClick={() => setSelected(null)}><ArrowLeft size={17}/>{t('ເລືອກຄົນອື່ນ', 'เลือกคนอื่น')}</button>
+      <button type="button" className="text-link" onClick={() => { setSelectedId(null); setPin(''); setError(false); }}><ArrowLeft size={17}/>{t('ເລືອກຄົນອື່ນ', 'เลือกคนอื่น')}</button>
       <div className="user-option is-static"><Avatar member={selected}/><span><strong>{selected.name}</strong><RoleChip role={selected.role}/></span></div>
       <label className="form-field"><span>{t('ໃສ່ PIN 4 ຕົວເລກ', 'ใส่ PIN 4 หลัก')}</span><input autoFocus className="pin-field" type="password" inputMode="numeric" autoComplete="off" maxLength={4} value={pin} onChange={event => { setPin(event.target.value.replace(/\D/g, '').slice(0, 4)); setError(false); }}/></label>
       {error && <p className="form-error" role="alert">{t('PIN ບໍ່ຖືກຕ້ອງ · ກະລຸນາລອງໃໝ່', 'PIN ไม่ถูกต้อง · กรุณาลองใหม่')}</p>}
       <button className="button primary full" disabled={pin.length !== 4}><LogIn size={20}/>{t('ເຂົ້າໃຊ້ງານ', 'เข้าใช้งาน')}</button>
-    </form> : <div className="user-list">{staff.filter(member => member.active).map(member => <button key={member.id} className={`user-option ${member.id === currentId ? 'is-current' : ''}`} onClick={() => member.id === currentId ? onClose() : setSelected(member)}>
+    </form> : <div className="user-list">{staff.filter(member => member.active).map(member => <button key={member.id} className={`user-option ${member.id === currentId ? 'is-current' : ''}`} onClick={() => { if (member.id === currentId) onClose?.(); else { setSelectedId(member.id); setPin(''); setError(false); } }}>
       <Avatar member={member}/>
       <span><strong>{member.name}</strong><RoleChip role={member.role}/></span>
       {member.id === currentId ? <span className="badge ready"><span className="status-dot"/>{t('ກຳລັງໃຊ້', 'กำลังใช้')}</span> : <ChevronRight size={19}/>}
     </button>)}</div>}
     <p className="demo-note">{t('ຕົ້ນແບບ: PIN ເລີ່ມຕົ້ນ ເຈົ້າຂອງ 1111 · ຜູ້ຈັດການ 2222 · ແຄຊເຊຍ 3333 · ຄົວ 4444', 'ต้นแบบ: PIN เริ่มต้น เจ้าของ 1111 · ผู้จัดการ 2222 · แคชเชียร์ 3333 · ครัว 4444')}</p>
-  </Dialog>;
+  </>;
 }
 
 export function SettingsView({ settings, activity, menu, onSave, onReset }) {
   const { t } = useL();
   const [tab, setTab] = useState('shop');
   const tabs = [
-    ['shop', Store, t('ຂໍ້ມູນຮ້ານ', 'ข้อมูลร้าน'), t('ຊື່ ສາຂາ ເບີໂທ', 'ชื่อ สาขา เบอร์โทร')],
-    ['payments', Wallet, t('ການຊຳລະເງິນ', 'การชำระเงิน'), t('ວິທີຮັບເງິນ', 'วิธีรับเงิน')],
-    ['activity', History, t('ປະຫວັດການໃຊ້ງານ', 'ประวัติการใช้งาน'), t('ໃຜເຮັດຫຍັງ ເມື່ອໃດ', 'ใครทำอะไร เมื่อไร')],
-    ['demo', RotateCcw, t('ຂໍ້ມູນທົດລອງ', 'ข้อมูลทดลอง'), t('ລ້າງແລ້ວເລີ່ມໃໝ່', 'ล้างแล้วเริ่มใหม่')],
+    ['shop', Store, t('ຂໍ້ມູນຮ້ານ', 'ข้อมูลร้าน')],
+    ['payments', Wallet, t('ການຊຳລະເງິນ', 'การชำระเงิน')],
+    ['activity', History, t('ປະຫວັດການໃຊ້ງານ', 'ประวัติการใช้งาน')],
+    ['demo', RotateCcw, t('ຂໍ້ມູນທົດລອງ', 'ข้อมูลทดลอง')],
   ];
-  return <section className="full-page bo-page">
+  return <section className="full-page bo-page bo-settings-page">
     <PageHeader icon={Settings} title={t('ຕັ້ງຄ່າ', 'ตั้งค่า')} text={t('ຂໍ້ມູນຮ້ານ ວິທີຮັບເງິນ ແລະ ປະຫວັດວ່າໃຜເຮັດຫຍັງ', 'ข้อมูลร้าน วิธีรับเงิน และประวัติว่าใครทำอะไร')}/>
     <div className="settings-layout">
-      <nav className="settings-nav" aria-label={t('ຕັ້ງຄ່າ', 'ตั้งค่า')}>{tabs.map(([id, Icon, label, hint]) => <button key={id} className={tab === id ? 'selected' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}><Icon size={20}/><span><strong>{label}</strong><small>{hint}</small></span></button>)}</nav>
+      <nav className="settings-nav" aria-label={t('ຕັ້ງຄ່າ', 'ตั้งค่า')}>{tabs.map(([id, Icon, label]) => <button key={id} className={tab === id ? 'selected' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}><Icon size={20}/><strong>{label}</strong></button>)}</nav>
       <div className="settings-panel">
         {tab === 'shop' && <ShopSettings settings={settings} onSave={onSave}/>}
         {tab === 'payments' && <PaymentSettings settings={settings} onSave={onSave}/>}

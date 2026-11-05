@@ -19,6 +19,11 @@ export const initial = name => { const [first, second] = [...name.trim()]; retur
 
 export function Badge({ status, children }) { const { t } = useL(); return <span className={`badge ${status}`}><span className="status-dot"/>{children || statusText(status, t)}</span>; }
 export function IconButton({ label, children, ...props }) { return <button className="icon-button" aria-label={label} title={label} {...props}>{children}</button>; }
+export function isDialogBackdropClick(event) {
+  if (event.target !== event.currentTarget) return false;
+  const bounds = event.currentTarget.getBoundingClientRect();
+  return event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom;
+}
 export function Dialog({ title, onClose, children, className = '' }) {
   const ref = useRef();
   const titleId = useId();
@@ -35,7 +40,7 @@ export function Dialog({ title, onClose, children, className = '' }) {
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
-  return <dialog ref={ref} className={`dialog ${className}`} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (event.target === ref.current) onClose(); }}><div className="dialog-head"><h2 id={titleId}>{title}</h2><IconButton label={t('ປິດ', 'ปิด')} onClick={onClose}><X size={22}/></IconButton></div>{children}</dialog>;
+  return <dialog ref={ref} className={`dialog ${className}`} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (isDialogBackdropClick(event)) onClose(); }}><div className="dialog-head"><h2 id={titleId}>{title}</h2><IconButton label={t('ປິດ', 'ปิด')} onClick={onClose}><X size={22}/></IconButton></div>{children}</dialog>;
 }
 // Back-office page title: icon tile, heading and one line of help, with actions on the right.
 export function PageHeader({ icon: Icon, title, text, children }) {

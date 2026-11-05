@@ -3,14 +3,16 @@ import { ArrowLeft, ArrowLeftRight, Soup, LayoutGrid, ClipboardList, Utensils, B
 import { useMenuQr } from './use-menu-qr';
 import { initialOrders } from './data';
 import Customer from './Customer';
-import { SettingsView, ShiftView, StaffView, SwitchUserDialog, TableSetupView } from './BackOffice';
+import { SettingsView, ShiftView, StaffAccessScreen, StaffView, SwitchUserDialog, TableSetupView } from './BackOffice';
 import { PosOrder } from './PosOrder';
 import { KitchenScreen } from './KitchenScreen';
+import { TablesScreen, staffStatusGroup as tableGroup, staffStatusIcons as tileIcons } from './TablesScreen';
 import { MenuAdmin } from './MenuAdmin';
 import { Dialog, EmptyState, IconButton, Locale, initial, itemName, money, pad, roleText, statusText, useL, viewIcons, viewLabel } from './staff-ui';
 import { orderTotal } from './order-model.mjs';
+import { matchesStaffTable, nextStaffOrder, summarizeStaffTable } from './staff-model.mjs';
 import { DEMO_STORAGE_KEY, applyOrderAction, commitCheckout, customerOrders, readDemoSession, restoreDemoSession, tableFromSearch, undoOrderAction, updateDemoSession } from './customer-model.mjs';
-import { addTable, answerCall, canOpen, cashSuggestions, closeShift, currentShift, deleteMenuItem, logActivity, openShift, paidInRange, removeLastTable, requestCall, roleViews, saveMenuItem, saveSettings, saveStaffMember, updateTable } from './backoffice-model.mjs';
+import { addTable, answerCall, canOpen, cashSuggestions, closeShift, currentShift, deleteMenuItem, logActivity, openShift, paidInRange, removeLastTable, requestCall, resolveStaffUser, roleViews, saveMenuItem, saveSettings, saveStaffMember, updateTable } from './backoffice-model.mjs';
 
 const emptyDraft = { cart: [], method: 'transfer', lastOrderId: null };
 const demoStorage = (() => { try { return window.localStorage; } catch { return null; } })();
@@ -22,6 +24,7 @@ const views = ['tables', 'orders', 'kitchen', 'shift', 'menu', 'table-setup', 's
 const viewFromHash = () => views.includes(location.hash.slice(1).split('/')[0]) ? location.hash.slice(1).split('/')[0] : 'tables';
 const navGroups = [['daily', ['tables', 'orders', 'kitchen', 'shift']], ['manage', ['menu', 'table-setup', 'staff', 'reports']], ['system', ['settings']]];
 const mobileTabs = ['tables', 'orders', 'kitchen', 'shift'];
+const compactViewLabel = (view, t) => ({ tables: t('ໜ້າຮ້ານ', 'หน้าร้าน'), orders: t('ອໍເດີ', 'ออเดอร์'), kitchen: t('ຄົວ', 'ครัว'), shift: t('ກະ & ເງິນ', 'กะ & เงิน'), menu: t('ເມນູ', 'เมนู'), 'table-setup': t('ໂຕະ & QR', 'โต๊ะ & QR'), staff: t('ພະນັກງານ', 'พนักงาน'), reports: t('ຍອດຂາຍ', 'ยอดขาย'), settings: t('ຕັ້ງຄ່າ', 'ตั้งค่า') }[view]);
 const callIcons = { help: Hand, pay: Banknote, water: GlassWater };
 const callLabel = (reason, t) => ({ help: t('ເອີ້ນພະນັກງານ', 'เรียกพนักงาน'), pay: t('ຂໍຈ່າຍເງິນທີ່ໂຕະ', 'ขอจ่ายเงินที่โต๊ะ'), water: t('ຂໍນ້ຳເປົ່າ', 'ขอน้ำเปล่า') }[reason]);
 export default function App() {
@@ -34,9 +37,9 @@ export default function App() {
   const tables = session.tables;
   const menu = session.menu.map(item => ({ ...item, available: !session.soldOut.includes(item.id) }));
   const [userId, setUserId] = useState(readUserId);
-  const user = session.staff.find(member => member.id === userId && member.active) ?? session.staff.find(member => member.active && member.role === 'owner');
-  const allowed = roleViews[user.role];
-  const screen = canOpen(user.role, view) ? view : allowed[0];
+  const user = resolveStaffUser(session.staff, userId);
+  const allowed = user ? roleViews[user.role] : [];
+  const screen = !user || canOpen(user.role, view) ? view : allowed[0];
   const shopName = session.settings.shopName || t('ຮ້ານເຂົ້າປຽກ', 'ร้านข้าวเปียก');
   const branch = session.settings.branch || t('ສາຂາ ວຽງຈັນ', 'สาขา เวียงจันทน์');
   const [activeTable, setActiveTable] = useState(3);
@@ -50,10 +53,12 @@ export default function App() {
   const pending = orders.filter(o => o.status === 'pending').length;
   const activeOrders = orders.filter(o => o.status !== 'completed');
   const tableOrders = activeOrders.filter(o => o.table === activeTable);
-  const order = tableOrders.find(o => o.id === selectedOrder) || tableOrders[0];
+  const tableFilter = ['all', 'pending', 'ready', 'calls', 'kitchen', 'served', 'empty'].includes(filter) ? filter : 'all';
+  const order = nextStaffOrder(tableOrders, selectedOrder, screen === 'tables' ? tableFilter : 'all');
+  const selectedTableVisible = matchesStaffTable(summarizeStaffTable(tableOrders, session.calls[activeTable]), tableFilter);
   const groupLabels = { daily: t('ງານປະຈຳວັນ', 'งานประจำวัน'), manage: t('ຈັດການຮ້ານ', 'จัดการร้าน'), system: t('ລະບົບ', 'ระบบ') };
-  const sidebarGroups = navGroups.map(([group, ids]) => [group, ids.filter(id => allowed.includes(id))]).filter(([group, ids]) => ids.length || (group === 'system' && user.role !== 'kitchen'));
-  const canEditMenu = ['owner', 'manager'].includes(user.role);
+  const sidebarGroups = navGroups.map(([group, ids]) => [group, ids.filter(id => allowed.includes(id))]).filter(([group, ids]) => ids.length || (group === 'system' && user?.role !== 'kitchen'));
+  const canEditMenu = ['owner', 'manager'].includes(user?.role);
   const go = destination => { location.hash = destination; setView(destination); window.scrollTo({top:0,behavior:'instant'}); };
   const notify = (text, undo) => setToast({ text, undo, id: Date.now() });
   const notifySaveFailed = () => notify(t('ບັນທຶກບໍ່ສຳເລັດ · ກະລຸນາລອງໃໝ່', 'บันทึกไม่สำเร็จ · กรุณาลองใหม่'));
@@ -80,6 +85,11 @@ export default function App() {
   // A screen this role may not open falls back to the role's first screen.
   useEffect(() => { if (screen !== view) go(screen); }, [screen, view]);
   useEffect(() => { if (!tables.some(table => table.number === activeTable)) setActiveTable(tables[0].number); }, [tables, activeTable]);
+  useEffect(() => {
+    if (screen !== 'tables' || selectedTableVisible) return;
+    const next = tables.find(table => matchesStaffTable(summarizeStaffTable(activeOrders.filter(order => order.table === table.number), session.calls[table.number]), tableFilter));
+    if (next) { setActiveTable(next.number); setSelectedOrder(null); }
+  }, [screen, tableFilter, selectedTableVisible, tables, orders, session.calls, activeTable]);
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   useEffect(() => { const id = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(id); }, []);
   useEffect(() => { if(!toast) return; const id = setTimeout(() => setToast(null), toast.undo ? 6000 : 4500); return () => clearTimeout(id); }, [toast]);
@@ -93,9 +103,11 @@ export default function App() {
   function change(update, describe) {
     try {
       saveSession(current => {
+        const actor = resolveStaffUser(current.staff, userId);
+        if (!actor) throw Object.assign(new Error('The staff account is unavailable'), { code: 'access-denied' });
         const next = update(current);
         const entry = typeof describe === 'function' ? describe(next, current) : describe;
-        return entry ? logActivity(next, { ...entry, by: user.name, role: user.role }) : next;
+        return entry ? logActivity(next, { ...entry, by: actor.name, role: actor.role }) : next;
       });
       return null;
     } catch (error) {
@@ -107,21 +119,33 @@ export default function App() {
     const latest = readDemoSession(demoStorage) ?? sessionRef.current;
     const previous = latest.orders.find(o => o.id === id);
     const clearedBefore = previous ? latest.clearedAt[previous.table] : undefined;
+    const callBefore = previous ? latest.calls[previous.table] : undefined;
     const failed = change(current => applyOrderAction(current, id, action, method), (next, current) => {
       const before = current.orders.find(o => o.id === id);
       const after = next.orders.find(o => o.id === id);
       return before && after.status !== before.status ? { type: action, orderId: id, table: before.table, amount: orderTotal(before.items), method: after.method } : null;
     });
-    if (failed) return false;
+    if (failed) {
+      if (failed === 'already-paid' || failed === 'changed') {
+        const current = readDemoSession(demoStorage) ?? sessionRef.current;
+        sessionRef.current = current;
+        setSession(current);
+        setDialog(null);
+        notify(t('ອໍເດີນີ້ຮັບເງິນແລ້ວ ຫຼື ສະຖານະປ່ຽນແລ້ວ · ກວດລາຍການລ່າສຸດ', 'ออเดอร์นี้รับเงินแล้วหรือสถานะเปลี่ยนแล้ว · ตรวจรายการล่าสุด'));
+      }
+      return false;
+    }
     const messages = { pay: t('ຮັບເງິນແລ້ວ · ສົ່ງອໍເດີໄປຄົວແລ້ວ', 'รับเงินแล้ว · ส่งออเดอร์เข้าครัวแล้ว'), start: t('ເລີ່ມເຮັດອາຫານແລ້ວ', 'เริ่มทำอาหารแล้ว'), ready: t('ອາຫານພ້ອມເສີບແລ້ວ', 'อาหารพร้อมเสิร์ฟแล้ว'), serve: t('ບັນທຶກການເສີບແລ້ວ', 'บันทึกการเสิร์ฟแล้ว'), close: t('ປິດອໍເດີແລ້ວ', 'ปิดออเดอร์แล้ว') };
     const status = sessionRef.current.orders.find(o => o.id === id)?.status;
+    if (['pay', 'serve', 'close'].includes(action)) setSelectedOrder(null);
     // A mistaken tap can be taken back for a few seconds.
-    notify(messages[action] + detail, previous ? () => undoAct(previous, clearedBefore, action, status) : undefined);
+    notify(messages[action] + detail, previous ? () => undoAct(previous, clearedBefore, action, status, callBefore) : undefined);
     return true;
   }
-  function undoAct(previous, clearedBefore, action, status) {
-    const failed = change(current => undoOrderAction(current, previous, clearedBefore, status), { type: 'undo', action, orderId: previous.id, table: previous.table });
-    if (failed === 'changed') notify(t('ອໍເດີນີ້ມີຄົນປ່ຽນຕໍ່ແລ້ວ · ເອົາຄືນບໍ່ໄດ້', 'ออเดอร์นี้มีคนเปลี่ยนต่อแล้ว · เอาคืนไม่ได้'));
+  function undoAct(previous, clearedBefore, action, status, callBefore) {
+    const failed = change(current => undoOrderAction(current, previous, clearedBefore, status, callBefore), { type: 'undo', action, orderId: previous.id, table: previous.table });
+    if (failed === 'shift-closed') notify(t('ກະຂອງລາຍການຮັບເງິນນີ້ປິດແລ້ວ · ເອົາຄືນບໍ່ໄດ້', 'กะของรายการรับเงินนี้ปิดแล้ว · เอาคืนไม่ได้'));
+    else if (failed === 'changed') notify(t('ອໍເດີນີ້ມີຄົນປ່ຽນຕໍ່ແລ້ວ · ເອົາຄືນບໍ່ໄດ້', 'ออเดอร์นี้มีคนเปลี่ยนต่อแล้ว · เอาคืนไม่ได้'));
     else if (!failed) notify(t(`ເອົາຄືນແລ້ວ · ອໍເດີ #${previous.id}`, `เอาคืนแล้ว · ออเดอร์ #${previous.id}`));
   }
   function updateDraft(table, transform) {
@@ -141,8 +165,14 @@ export default function App() {
     notify(failed === 'last-dish' ? t('ຕ້ອງມີຢ່າງໜ້ອຍ 1 ເມນູ', 'ต้องมีอย่างน้อย 1 เมนู') : failed ? t('ລຶບບໍ່ສຳເລັດ', 'ลบไม่สำเร็จ') : t('ລຶບເມນູແລ້ວ', 'ลบเมนูแล้ว'));
     return failed;
   }
-  function submit(table, source) {
-    const result = commitCheckout(demoStorage, readDemoSession(demoStorage) ?? sessionRef.current, table, source);
+  function submit(table, source, reviewedKey) {
+    const latest = readDemoSession(demoStorage) ?? sessionRef.current;
+    let result;
+    try { result = commitCheckout(demoStorage, latest, table, source, undefined, reviewedKey); }
+    catch (error) {
+      if (error.code === 'cart-changed') { sessionRef.current = latest; setSession(latest); }
+      throw error;
+    }
     sessionRef.current = result.session;
     setSession(result.session);
     setActiveTable(table);
@@ -151,6 +181,7 @@ export default function App() {
     try { saveSession(current => logActivity(current, { type: 'order', orderId: result.orderId, table, by: source === 'cashier' ? user.name : null, role: source === 'cashier' ? user.role : null })); } catch { /* the order stands */ }
     if (source === 'cashier') {
       // A cashier entry returns to its table so payment can be taken straight away.
+      setFilter('all');
       go('tables');
       notify(t(`ເພີ່ມອໍເດີ #${result.orderId} ແລ້ວ · ລໍຖ້າຮັບເງິນ`, `เพิ่มออเดอร์ #${result.orderId} แล้ว · รอรับเงิน`));
       showOrderPanel();
@@ -168,21 +199,24 @@ export default function App() {
     }
   }
   function callStaff(table, reason) {
-    try { saveSession(current => logActivity(requestCall(current, table, reason), { type: 'call', table, reason, by: null, role: null })); } catch { /* the guest can tap again */ }
+    saveSession(current => logActivity(requestCall(current, table, reason), { type: 'call', table, reason, by: null, role: null }));
   }
   function cancelCall(table) {
-    try { saveSession(current => answerCall(current, table)); } catch { /* the call simply stays */ }
+    saveSession(current => answerCall(current, table));
   }
   function answerTableCall(table) {
     const failed = change(current => answerCall(current, table), { type: 'call-answered', table });
     if (!failed) notify(t(`ຮັບຊາບແລ້ວ · ໂຕະ ${pad(table)}`, `รับทราบแล้ว · โต๊ะ ${pad(table)}`));
   }
   function signIn(member) {
+    const current = readDemoSession(demoStorage) ?? sessionRef.current;
+    if (!current.staff.some(person => person.id === member.id && person.active && person.pin === member.pin)) return false;
     try { demoStorage?.setItem(userKey, member.id); } catch { /* sign-in still applies to this tab */ }
     setUserId(member.id);
     try { saveSession(current => logActivity(current, { type: 'signin', by: member.name, role: member.role })); } catch { /* signing in does not need the log */ }
     setDialog(null);
     notify(t(`ເຂົ້າໃຊ້ງານເປັນ ${member.name}`, `เข้าใช้งานเป็น ${member.name}`));
+    return true;
   }
   const shiftErrors = { 'shift-open': t('ມີກະທີ່ເປີດຢູ່ແລ້ວ', 'มีกะที่เปิดอยู่แล้ว'), 'no-shift': t('ບໍ່ມີກະທີ່ເປີດຢູ່', 'ไม่มีกะที่เปิดอยู่'), amount: t('ຈຳນວນເງິນບໍ່ຖືກຕ້ອງ', 'จำนวนเงินไม่ถูกต้อง') };
   function startShift(amount) {
@@ -220,6 +254,7 @@ export default function App() {
   }
   const orderingTable = qrTable.fromQr ? qrTable.table : activeTable;
   if (view === 'customer') return <Customer menu={menu} table={orderingTable} staffAccess={!qrTable.fromQr} shopName={session.settings.shopName} methods={session.settings.methods} call={session.calls[orderingTable]} onCall={reason => callStaff(orderingTable, reason)} onCancelCall={() => cancelCall(orderingTable)} draft={session.drafts[orderingTable] || emptyDraft} onUpdateDraft={transform => updateDraft(orderingTable, transform)} onSubmit={submit} tableOrders={customerOrders(orders, orderingTable, session.clearedAt[orderingTable])} onBack={() => go('tables')} initialLanguage={lang}/>;
+  if (!user) return <Locale.Provider value={{ lang, t }}><StaffAccessScreen staff={session.staff} onSignIn={signIn}/></Locale.Provider>;
   const tabScreen = screen === 'pos' ? 'tables' : screen;
   return <Locale.Provider value={{ lang, t }}><div className="app">
     <a className="skip-link" href="#main-content" onClick={e=>{e.preventDefault();document.getElementById('main-content')?.focus();}}>{t('ຂ້າມໄປເນື້ອຫາ', 'ข้ามไปเนื้อหา')}</a>
@@ -230,7 +265,7 @@ export default function App() {
         {index > 0 && <div className="nav-separator"/>}
         <div className="nav-caption">{groupLabels[group]}</div>
         <nav className="main-nav" aria-label={groupLabels[group]}>
-          {ids.map(id => { const Icon = viewIcons[id]; const label = viewLabel(id, t); return <button key={id} className={tabScreen===id?'active':''} onClick={() => go(id)} aria-label={label} title={label} aria-current={tabScreen===id?'page':undefined}><Icon size={21}/><span>{label}</span>{id==='orders'&&pending>0&&<span className="nav-count">{pending}</span>}</button>; })}
+          {ids.map(id => { const Icon = viewIcons[id]; const label = viewLabel(id, t); return <button key={id} className={tabScreen===id?'active':''} onClick={() => go(id)} aria-label={label} title={label} aria-current={tabScreen===id?'page':undefined}><Icon size={21}/><span className="nav-label-full">{label}</span><span className="nav-label-compact" aria-hidden="true">{compactViewLabel(id, t)}</span>{id==='orders'&&pending>0&&<span className="nav-count">{pending}</span>}</button>; })}
           {group === 'system' && user.role !== 'kitchen' && <button className="customer-link" aria-label={viewLabel('customer', t)} title={viewLabel('customer', t)} onClick={() => go('customer')}><Smartphone size={21}/><span>{viewLabel('customer', t)}</span><ArrowUpRight size={16}/></button>}
         </nav>
       </React.Fragment>)}
@@ -239,7 +274,7 @@ export default function App() {
     <div className="workspace"><header className="topbar"><div className="location-label"><Store size={18}/><span>{shopName}</span><span className="topbar-divider"/><span className="open-label"><i/>{t('ເປີດຮ້ານ', 'เปิดร้าน')}</span></div><div className="topbar-actions"><span className="demo-tag">{t('ຂໍ້ມູນຕົວຢ່າງ', 'ข้อมูลตัวอย่าง')}</span><time className="header-clock">{now.toLocaleTimeString('en-GB',{timeZone:'Asia/Vientiane',hour:'2-digit',minute:'2-digit'})}</time><button className="language-button" onClick={() => setLang(lang==='lo'?'th':'lo')} aria-label={lang==='lo'?'เปลี่ยนเป็นภาษาไทย':'ປ່ຽນເປັນພາສາລາວ'}>{lang==='lo'?'ລາວ':'ไทย'}<ChevronDown size={14}/></button>{allowed.includes('orders')&&<IconButton label={t('ອໍເດີທີ່ລໍຖ້າ', 'ออเดอร์ที่รอ')} onClick={() => { setFilter('pending'); go('orders'); }}><Bell size={21}/>{pending>0&&<i className="notification-dot"/>}</IconButton>}</div></header>
     {!online&&<div className="offline-banner" role="status"><WifiOff size={18}/>{t('ບໍ່ມີອິນເຕີເນັດ · ກຳລັງໃຊ້ຕົ້ນແບບໃນເຄື່ອງນີ້', 'ไม่มีอินเทอร์เน็ต · กำลังใช้ต้นแบบในเครื่องนี้')}</div>}
     <main id="main-content" tabIndex={-1} className={`main-content view-${screen}`}>
-      {screen==='tables'&&<><TablesScreen tables={tables} activeOrders={activeOrders} calls={session.calls} activeTable={activeTable} filter={filter} setFilter={setFilter} now={now} onSelect={number=>{setActiveTable(number);setSelectedOrder(null);if(innerWidth<=600)requestAnimationFrame(()=>document.querySelector('.order-panel')?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'}));}}/><OrderPanel table={activeTable} info={tables.find(table=>table.number===activeTable)} order={order} tableOrders={tableOrders} call={session.calls[activeTable]} now={now} setSelected={setSelectedOrder} onPay={()=>setDialog({type:'payment',order})} onAct={act} onAdd={()=>go('pos')} onQr={()=>setDialog({type:'qr',table:activeTable})} onAnswerCall={()=>answerTableCall(activeTable)}/></>}
+      {screen==='tables'&&<><TablesScreen tables={tables} activeOrders={activeOrders} calls={session.calls} activeTable={activeTable} filter={filter} setFilter={next=>{setFilter(next);setSelectedOrder(null);}} now={now} onSelect={number=>{setActiveTable(number);setSelectedOrder(null);if(innerWidth<=600)requestAnimationFrame(()=>document.querySelector('.order-panel')?.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'}));}}/>{selectedTableVisible ? <OrderPanel table={activeTable} info={tables.find(table=>table.number===activeTable)} order={order} tableOrders={tableOrders} call={session.calls[activeTable]} now={now} setSelected={setSelectedOrder} onPay={()=>setDialog({type:'payment',order})} onAct={act} onAdd={()=>go('pos')} onQr={()=>setDialog({type:'qr',table:activeTable})} onAnswerCall={()=>answerTableCall(activeTable)}/> : <aside className="counter-no-selection"><Armchair size={34}/><h2>{t('ເລືອກໂຕະເພື່ອເຮັດຕໍ່','เลือกโต๊ะเพื่อทำต่อ')}</h2><p>{t('ລາຍລະອຽດຈະປາກົດທີ່ນີ້ ເມື່ອມີໂຕະໃນລາຍການທີ່ເລືອກ','รายละเอียดจะแสดงที่นี่ เมื่อมีโต๊ะในรายการที่เลือก')}</p></aside>}</>}
       {screen==='pos'&&<PosOrder table={activeTable} tables={tables} menu={menu} draft={session.drafts[activeTable] || emptyDraft} onTable={setActiveTable} onUpdateDraft={transform => updateDraft(activeTable, transform)} onSubmit={submitPos} onBack={() => go('tables')}/>}
       {screen==='orders'&&<OrdersView orders={orders} filter={filter} setFilter={setFilter} now={now} onPay={o=>setDialog({type:'payment',order:o})} onAct={act} onGoTable={o=>{setActiveTable(o.table);setSelectedOrder(o.id);setFilter('all');go('tables');showOrderPanel();}}/>}
       {screen==='menu'&&<MenuAdmin menu={menu} canEdit={canEditMenu} onToggle={toggleSoldOut} onSave={saveDish} onDelete={removeDish}/>}
@@ -259,68 +294,48 @@ export default function App() {
   </div></Locale.Provider>;
 }
 
-// Each table shows its most urgent order: payment first, then food that is ready to serve.
-const statusPriority = ['pending', 'ready', 'cooking', 'queued', 'served'];
-const tableState = orders => { const order = statusPriority.map(status => orders.find(o => o.status === status)).find(Boolean); return { order, status: order?.status ?? 'empty' }; };
-// For the people at the counter, queued and cooking orders are both simply "in the kitchen".
-const tableGroup = status => ['queued', 'cooking'].includes(status) ? 'kitchen' : status;
 const needsAction = status => status === 'pending' || status === 'ready';
-const tileIcons = { pending: Banknote, queued: Hourglass, cooking: CookingPot, ready: BellRing, served: Utensils, empty: Armchair };
-function TablesScreen({ tables, activeOrders, calls, activeTable, filter, setFilter, now, onSelect }) {
-  const { t } = useL();
-  const states = tables.map(table => { const orders = activeOrders.filter(o => o.table === table.number); return { table, orders, call: calls[table.number], ...tableState(orders) }; });
-  const filters = [['all', t('ທັງໝົດ', 'ทั้งหมด')], ['pending', t('ລໍຖ້າຮັບເງິນ', 'รอรับเงิน'), Banknote], ['kitchen', t('ຢູ່ໃນຄົວ', 'อยู่ในครัว'), CookingPot], ['ready', t('ພ້ອມເສີບ', 'พร้อมเสิร์ฟ'), BellRing], ['served', t('ເສີບແລ້ວ', 'เสิร์ฟแล้ว'), Utensils], ['empty', t('ຫວ່າງ', 'ว่าง'), Armchair]];
-  const current = filters.some(([id]) => id === filter) ? filter : 'all';
-  const count = id => id === 'all' ? states.length : states.filter(state => tableGroup(state.status) === id).length;
-  const shown = states.filter(state => current === 'all' || tableGroup(state.status) === current);
-  const zoneName = table => table.zone || t('ຊັ້ນ 1', 'ชั้น 1');
-  const zones = [...new Set(tables.map(zoneName))];
-  const waiting = states.filter(state => state.call || needsAction(state.status)).length;
-  return <section className="table-workspace">
-    <div className="page-heading"><div><h1>{t('ໂຕະອາຫານ', 'โต๊ะอาหาร')}</h1><p>{waiting ? t(`${waiting} ໂຕະລໍຖ້າທ່ານ · ກົດໂຕະເພື່ອເບິ່ງລາຍລະອຽດ`, `${waiting} โต๊ะรอคุณอยู่ · กดโต๊ะเพื่อดูรายละเอียด`) : t('ທຸກໂຕະຮຽບຮ້ອຍ · ກົດໂຕະເພື່ອເບິ່ງລາຍລະອຽດ', 'ทุกโต๊ะเรียบร้อย · กดโต๊ะเพื่อดูรายละเอียด')}</p></div></div>
-    <div className="table-filters" role="group" aria-label={t('ສະແດງໂຕະຕາມສະຖານະ', 'แสดงโต๊ะตามสถานะ')}>{filters.map(([id, label, Icon]) => <button key={id} className={`filter-chip ${id} ${current === id ? 'selected' : ''}`} aria-pressed={current === id} onClick={() => setFilter(id)}>{Icon && <Icon size={16}/>}<span>{label}</span><b>{count(id)}</b></button>)}</div>
-    {shown.length ? zones.map(zone => {
-      const inZone = shown.filter(state => zoneName(state.table) === zone);
-      return inZone.length > 0 && <div className="table-zone" key={zone}>
-        {zones.length > 1 && <h2 className="zone-title">{zone}<span>{inZone.length}</span></h2>}
-        <div className="table-grid">{inZone.map(state => <TableTile key={state.table.number} {...state} active={activeTable === state.table.number} now={now} onClick={() => onSelect(state.table.number)}/>)}</div>
-      </div>;
-    }) : <EmptyState icon={LayoutGrid} title={t('ບໍ່ມີໂຕະໃນສະຖານະນີ້', 'ไม่มีโต๊ะในสถานะนี้')} text={t('ລອງເລືອກສະຖານະອື່ນ', 'ลองเลือกสถานะอื่น')}><button className="button secondary" onClick={() => setFilter('all')}>{t('ເບິ່ງທຸກໂຕະ', 'ดูทุกโต๊ะ')}</button></EmptyState>}
-  </section>;
-}
-function TableTile({ table, orders, order, status, call, active, now, onClick }) {
-  const { t } = useL();
-  const Icon = tileIcons[status];
-  const minutes = order ? Math.max(0, Math.floor((now.getTime() - order.createdAt) / 60000)) : 0;
-  const late = order && ['pending', 'queued', 'cooking'].includes(status) && minutes >= 15;
-  const total = orders.reduce((sum, o) => sum + orderTotal(o.items), 0);
-  const CallIcon = call && callIcons[call.reason];
-  return <button className={`table-tile ${tableGroup(status)} ${active ? 'is-active' : ''} ${call ? 'has-call' : ''}`} onClick={onClick} aria-pressed={active} aria-label={`${t('ໂຕະ', 'โต๊ะ')} ${pad(table.number)} · ${statusText(status, t)}${call ? ` · ${callLabel(call.reason, t)}` : ''}${order ? ` · ${money(total)} ₭ · ${minutes} ${t('ນາທີ', 'นาที')}` : ''}`}>
-    <span className="tile-head"><span className="tile-number">{pad(table.number)}</span>{orders.length > 1 && <span className="tile-orders">{orders.length} {t('ອໍເດີ', 'ออเดอร์')}</span>}{active ? <span className="selected-mark"><Check size={13}/></span> : needsAction(status) && !call && <span className="tile-alert"/>}</span>
-    {call && <span className="tile-call"><CallIcon size={14}/>{callLabel(call.reason, t)}</span>}
-    <span className="tile-state">{order && <Icon size={16}/>}{order ? statusText(status, t) : t('ຫວ່າງ', 'ว่าง')}</span>
-    <span className="tile-meta">{order ? <><span>{money(total)} ₭</span><span className={late ? 'is-late' : ''}><Clock3 size={12}/>{minutes} {t('ນາທີ', 'นาที')}</span></> : <span><Users size={13}/>{table.seats} {t('ບ່ອນນັ່ງ', 'ที่นั่ง')}</span>}</span>
-  </button>;
-}
+
 function OrderPanel({table,info,order,tableOrders,call,now,setSelected,onPay,onAct,onAdd,onQr,onAnswerCall}) {
   const {t,lang}=useL();
+  const actionLock = useRef(false);
+  const actionTimer = useRef(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  useEffect(() => () => clearTimeout(actionTimer.current), []);
+  function advance(action) {
+    if (actionLock.current) return;
+    actionLock.current = true;
+    setActionBusy(true);
+    if (!onAct(order.id, action)) {
+      actionLock.current = false;
+      setActionBusy(false);
+      return;
+    }
+    // The next ticket may occupy this same button immediately after a successful tap.
+    actionTimer.current = setTimeout(() => { actionLock.current = false; setActionBusy(false); }, 650);
+  }
+  const due = summarizeStaffTable(tableOrders).due;
   const steps = [t('ຮັບເງິນ', 'รับเงิน'), t('ຄົວ', 'ครัว'), t('ເສີບ', 'เสิร์ฟ'), t('ປິດໂຕະ', 'ปิดโต๊ะ')];
   const stage = order ? { pending: 0, queued: 1, cooking: 1, ready: 2, served: 3 }[order.status] : -1;
   const StateIcon = order ? tileIcons[order.status] : null;
   const CallIcon = call && callIcons[call.reason];
   return <aside className="order-panel" aria-label={t('ລາຍລະອຽດໂຕະ','รายละเอียดโต๊ะ')}>
+    <div className="order-panel-content">
     <button className="order-panel-back" onClick={() => document.querySelector('.table-workspace')?.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' })}><ArrowLeft size={18}/>{t('ເລືອກໂຕະອື່ນ', 'เลือกโต๊ะอื่น')}</button>
     <div className="order-panel-heading"><div><h2>{t('ໂຕະ','โต๊ะ')} {pad(table)}</h2><span>{info?.zone||t('ຊັ້ນ 1','ชั้น 1')}<i/> {info?.seats??'–'} {t('ບ່ອນນັ່ງ','ที่นั่ง')}</span></div><IconButton label={t('QR ໂຕະນີ້','QR โต๊ะนี้')} onClick={onQr}><QrCode size={22}/></IconButton></div>
     {call&&<div className="call-banner" role="status"><span className="call-banner-icon"><CallIcon size={20}/></span><span><strong>{callLabel(call.reason,t)}</strong><small>{Math.max(0,Math.floor((now.getTime()-call.at)/60000))} {t('ນາທີກ່ອນ','นาทีที่แล้ว')}</small></span><button className="button secondary" onClick={onAnswerCall}><Check size={18}/>{t('ຮັບຊາບ','รับทราบ')}</button></div>}
+    {tableOrders.length>1&&<div className={`counter-table-due ${due===0?'is-paid':''}`}><span>{t('ຄ້າງຊຳລະທັງໂຕະ','ค้างชำระทั้งโต๊ะ')}</span><strong>{due>0?`${money(due)} ₭`:t('ຊຳລະຄົບແລ້ວ','ชำระครบแล้ว')}</strong></div>}
     {tableOrders.length>1&&<div className="order-tabs">{tableOrders.map(o=><button key={o.id} aria-pressed={o.id===order?.id} className={o.id===order?.id?'selected':''} onClick={()=>setSelected(o.id)}><strong>#{o.id}</strong><span>{statusText(o.status,t)}</span></button>)}</div>}
     {order?<>
       <div className={`order-state ${tableGroup(order.status)}`}><StateIcon size={22}/><div><strong>{statusText(order.status,t)}</strong><span>#{order.id} · {new Date(order.createdAt).toLocaleTimeString('en-GB',{timeZone:'Asia/Vientiane',hour:'2-digit',minute:'2-digit'})} · {order.source==='cashier'?t('ພະນັກງານຮັບອໍເດີ','พนักงานรับออเดอร์'):t('ສັ່ງຈາກ QR','สั่งจาก QR')}</span></div></div>
       <ol className="order-steps">{steps.map((label,index)=><li key={label} className={index<stage?'done':index===stage?'now':''} aria-current={index===stage?'step':undefined}><i/>{label}</li>)}</ol>
       <div className="receipt-items"><div className="receipt-label"><h3>{t('ລາຍການອາຫານ','รายการอาหาร')}</h3><span>{order.items.reduce((s,i)=>s+i.quantity,0)} {t('ລາຍການ','รายการ')}</span></div>{order.items.map((item,i)=><div className="receipt-item" key={i}><span className="quantity-box">{item.quantity}</span><div><strong>{itemName(item,lang)}</strong>{item.category!=='drinks'&&<small>{item.size==='large'?t('ພິເສດ','พิเศษ'):t('ທຳມະດາ','ธรรมดา')}</small>}{item.note&&<span className="item-note">{itemNote(item,lang)}</span>}</div><span>{money(item.price*item.quantity)}</span></div>)}<button className="add-food" onClick={onAdd}><Plus size={18}/>{t('ເພີ່ມອໍເດີ','เพิ่มออเดอร์')}</button></div>
-      <div className="receipt-bottom"><div className="total"><span>{t('ລວມທັງໝົດ','รวมทั้งหมด')}</span><strong>{money(orderTotal(order.items))}<small> ₭</small></strong></div><div className="payment-method">{order.method==='transfer'?<CreditCard size={18}/>:<Banknote size={18}/>}<span>{order.method==='transfer'?t('ໂອນເງິນ','โอนเงิน'):t('ເງິນສົດ','เงินสด')}</span>{order.paid&&<span className="paid-mark"><CheckCircle2 size={15}/>{t('ຮັບເງິນແລ້ວ','รับเงินแล้ว')}</span>}</div>{order.status==='pending'?<button className="button primary full payment-cta" onClick={onPay}><Banknote size={21}/>{t('ຮັບເງິນ','รับเงิน')} · {money(orderTotal(order.items))} ₭<ArrowRight size={19}/></button>:order.status==='ready'?<button className="button primary full" onClick={()=>onAct(order.id,'serve')}><Check size={20}/>{t('ຢືນຢັນເສີບແລ້ວ','ยืนยันเสิร์ฟแล้ว')}</button>:order.status==='served'?<button className="button primary full" onClick={()=>onAct(order.id,'close')}><CheckCircle2 size={20}/>{tableOrders.length > 1 ? t('ປິດອໍເດີນີ້','ปิดออเดอร์นี้') : t('ປິດໂຕະ','ปิดโต๊ะ')}</button>:<div className="kitchen-sent"><ChefHat size={20}/>{t('ສົ່ງຄົວແລ້ວ · ລໍຖ້າອາຫານ','ส่งครัวแล้ว · รออาหาร')}</div>}</div>
     </>:<div className="empty-table"><span className="empty-icon"><Armchair size={42} strokeWidth={1.4}/></span><h3>{t('ພ້ອມຮັບລູກຄ້າ','พร้อมรับลูกค้า')}</h3><p>{t('ລູກຄ້າສະແກນ QR ເພື່ອສັ່ງອາຫານ ຫຼື ເພີ່ມອໍເດີໃຫ້ລູກຄ້າໄດ້ເລີຍ','ลูกค้าสแกน QR เพื่อสั่งอาหาร หรือเพิ่มออเดอร์ให้ลูกค้าได้เลย')}</p><button className="button primary full" onClick={onAdd}><Plus size={20}/>{t('ເພີ່ມອໍເດີ','เพิ่มออเดอร์')}</button><button className="button secondary full" onClick={onQr}><QrCode size={20}/>{t('ເບິ່ງ QR ໂຕະນີ້','ดู QR โต๊ะนี้')}</button></div>}
+    </div>
+    {order && <div className="receipt-bottom"><div className="total"><span>{t('ຍອດອໍເດີນີ້','ยอดออเดอร์นี้')}</span><strong>{money(orderTotal(order.items))}<small> ₭</small></strong></div><div className="payment-method">{order.method==='transfer'?<CreditCard size={18}/>:<Banknote size={18}/>}<span>{order.method==='transfer'?t('ໂອນເງິນ','โอนเงิน'):t('ເງິນສົດ','เงินสด')}</span>{order.paid&&<span className="paid-mark"><CheckCircle2 size={15}/>{t('ຮັບເງິນແລ້ວ','รับเงินแล้ว')}</span>}</div>{order.status==='pending'?<button className="button primary full payment-cta" onClick={onPay}><Banknote size={21}/>{t('ຮັບເງິນ','รับเงิน')} · {money(orderTotal(order.items))} ₭<ArrowRight size={19}/></button>:order.status==='ready'?<button className="button primary full" disabled={actionBusy} onClick={()=>advance('serve')}><Check size={20}/>{t('ຢືນຢັນເສີບແລ້ວ','ยืนยันเสิร์ฟแล้ว')}</button>:order.status==='served'?<button className="button primary full" disabled={actionBusy} onClick={()=>advance('close')}><CheckCircle2 size={20}/>{tableOrders.length > 1 ? t('ປິດອໍເດີນີ້','ปิดออเดอร์นี้') : t('ປິດໂຕະ','ปิดโต๊ะ')}</button>:<div className="kitchen-sent"><ChefHat size={20}/>{t('ສົ່ງຄົວແລ້ວ · ລໍຖ້າອາຫານ','ส่งครัวแล้ว · รออาหาร')}</div>}</div>}
   </aside>;
 }
+
 
 // One screen, one confirm: pick how the guest paid, and for cash see the change straight away.
 function PaymentDialog({order,methods,shiftOpen,onClose,onConfirm}) {

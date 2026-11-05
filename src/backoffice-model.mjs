@@ -21,6 +21,10 @@ export const defaultStaff = [
   { id: 'cashier-1', name: 'ແສງດາວ', role: 'cashier', pin: '3333', active: true },
   { id: 'kitchen-1', name: 'ບຸນມີ', role: 'kitchen', pin: '4444', active: true },
 ];
+// Only the first demo visit defaults to its owner; a revoked selection stays locked.
+export function resolveStaffUser(staff, userId) {
+  return staff.find(member => member.active && (userId ? member.id === userId : member.role === 'owner')) ?? null;
+}
 // An empty zone shows the translated default floor name.
 export const defaultTables = (count = tableCount) => Array.from({ length: count }, (_, index) => ({ number: index + 1, seats: (index + 1) % 3 === 0 ? 6 : 4, zone: '' }));
 export const maxTables = 60;
