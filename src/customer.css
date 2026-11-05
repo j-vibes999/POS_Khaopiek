@@ -111,7 +111,6 @@
 .dining-order-heading > strong { font-size: 21px; font-weight: 700; line-height: 1.4; }
 .dining-status { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 9px; border-radius: 20px; background: #f4f0ff; color: #7952a8; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .dining-status.pending { background: #fff7c4; color: #8b6200; }
-.dining-status.queued { background: #fff0dc; color: #9a5a13; }
 .dining-status.cooking { background: #eaf0fe; color: #4664a1; }
 .dining-status.ready { background: #e6f3e7; color: #366c40; }
 .dining-order-amount { font-size: 21px; font-weight: 700; color: var(--dining-price); font-variant-numeric: tabular-nums; }
@@ -373,7 +372,7 @@
 .dining-order-guidance h2 { font-size: 18px; font-weight: 700; line-height: 1.6; }
 .dining-order-guidance p { font-size: 14px; line-height: 1.8; margin-top: 5px; }
 .dining-order-guidance.ready, .dining-order-guidance.served { background: #eaf3e8; color: #35613c; }
-.dining-order-guidance.cooking, .dining-order-guidance.queued { background: #ecf1fa; color: #3e5a88; }
+.dining-order-guidance.cooking { background: #ecf1fa; color: #3e5a88; }
 .dining-tab-orders .dining-notice { bottom: calc(var(--dining-nav-height) + env(safe-area-inset-bottom) + var(--dining-footer-height, 160px) + 12px); }
 .dining-tab-menu.dining-has-basket .dining-notice { bottom: calc(var(--dining-nav-height) + env(safe-area-inset-bottom) + var(--dining-footer-height, 60px) + 26px); }
 .dining-notice > button, .dining-notice .dining-notice-close { min-width: 44px; min-height: 44px; }

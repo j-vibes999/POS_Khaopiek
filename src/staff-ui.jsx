@@ -9,7 +9,14 @@ export const pad = n => String(n).padStart(2, '0');
 export const itemName = (item, lang) => item[lang] || item.lo;
 export const clockTime = time => new Date(time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Vientiane', hour: '2-digit', minute: '2-digit' });
 export const shortDate = time => new Date(time).toLocaleDateString('en-GB', { timeZone: 'Asia/Vientiane', day: '2-digit', month: '2-digit', year: 'numeric' });
-export const statusText = (status, t) => ({ pending: t('ລໍຖ້າຮັບເງິນ', 'รอรับเงิน'), queued: t('ລໍຖ້າຄົວ', 'รอครัวรับ'), cooking: t('ກຳລັງເຮັດ', 'กำลังทำ'), ready: t('ພ້ອມເສີບ', 'พร้อมเสิร์ฟ'), served: t('ເສີບແລ້ວ', 'เสิร์ฟแล้ว'), completed: t('ສຳເລັດ', 'เสร็จสิ้น'), empty: t('ໂຕະຫວ່າງ', 'โต๊ะว่าง') }[status]);
+export const statusText = (status, t) => ({
+  pending: t('ລໍຖ້າຮັບເງິນ', 'รอรับเงิน'),
+  cooking: t('ກຳລັງເຮັດ', 'กำลังทำ'),
+  ready: t('ພ້ອມເສີບ', 'พร้อมเสิร์ฟ'),
+  served: t('ເສີບແລ້ວ', 'เสิร์ฟแล้ว'),
+  completed: t('ສຳເລັດ', 'เสร็จสิ้น'),
+  empty: t('ໂຕະຫວ່າງ', 'โต๊ะว่าง'),
+}[status === 'queued' ? 'cooking' : status]);
 export const roleText = (role, t) => ({ owner: t('ເຈົ້າຂອງຮ້ານ', 'เจ้าของร้าน'), manager: t('ຜູ້ຈັດການ', 'ผู้จัดการ'), cashier: t('ແຄຊເຊຍ', 'แคชเชียร์'), kitchen: t('ພະນັກງານຄົວ', 'พนักงานครัว') }[role]);
 export const methodText = (method, t) => method === 'transfer' ? t('ໂອນເງິນ', 'โอนเงิน') : t('ເງິນສົດ', 'เงินสด');
 export const viewLabel = (view, t) => ({ tables: t('ໂຕະອາຫານ', 'โต๊ะอาหาร'), orders: t('ອໍເດີທັງໝົດ', 'ออเดอร์ทั้งหมด'), kitchen: t('ໜ້າຈໍຄົວ', 'หน้าจอครัว'), shift: t('ກະ & ເງິນສົດ', 'กะ & เงินสด'), menu: t('ຈັດການເມນູ', 'จัดการเมนู'), 'table-setup': t('ໂຕະ & QR', 'โต๊ะ & QR'), staff: t('ພະນັກງານ', 'พนักงาน'), reports: t('ສະຫຼຸບຍອດຂາຍ', 'สรุปยอดขาย'), settings: t('ຕັ້ງຄ່າ', 'ตั้งค่า'), customer: t('ເມນູລູກຄ້າ', 'เมนูลูกค้า') }[view]);

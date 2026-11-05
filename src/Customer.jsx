@@ -123,24 +123,30 @@ export function OrderConfirmation({ review, language, c, busy, error, onClose, o
   </dialog>;
 }
 
+const customerOrderStatus = status => status === 'queued' ? 'cooking' : status;
+
 function OrderHistory({ orders, language, c, now, onMenu, footerRef, recentOrderId }) {
   const summary = summarizeCustomerOrders(orders);
   const recentOrder = orders.find(order => order.id === recentOrderId && order.status !== 'completed');
   const activeOrder = recentOrder || orders.find(order => order.status === 'pending') || orders.find(order => order.status !== 'completed');
+  const activeStatus = customerOrderStatus(activeOrder?.status);
   function relative(date) {
     const minutes = Math.max(0, Math.floor((now - date) / 60000));
     return minutes === 0 ? c('justNow') : c('minutesAgo', { count: minutes });
   }
   return <><section className="dining-order-list">
-    {activeOrder && <div className={`dining-order-guidance ${activeOrder.status}`}>
-      {recentOrder && activeOrder.status === 'pending' ? <CheckCircle2 size={25}/> : activeOrder.status === 'pending' ? <Banknote size={25}/> : ['queued', 'cooking'].includes(activeOrder.status) ? <ChefHat size={25}/> : <CheckCircle2 size={25}/>}
-      <div><h2>{recentOrder && activeOrder.status === 'pending' ? c('orderReceived', { id: recentOrder.id }) : c(`next_${activeOrder.status}`)}</h2><p>{c(activeOrder.status === 'pending' ? 'paymentNext' : 'kitchenNext')}</p></div>
+    {activeOrder && <div className={`dining-order-guidance ${activeStatus}`}>
+      {recentOrder && activeStatus === 'pending' ? <CheckCircle2 size={25}/> : activeStatus === 'pending' ? <Banknote size={25}/> : activeStatus === 'cooking' ? <ChefHat size={25}/> : <CheckCircle2 size={25}/>}
+      <div><h2>{recentOrder && activeStatus === 'pending' ? c('orderReceived', { id: recentOrder.id }) : c(`next_${activeStatus}`)}</h2><p>{c(activeStatus === 'pending' ? 'paymentNext' : 'kitchenNext')}</p></div>
     </div>}
     {!orders.length && <Empty icon={ClipboardList} title={c('emptyOrders')} description={c('pickFood')}><button className="dining-primary" onClick={onMenu}><BookOpen size={20}/>{c('openMenu')}</button></Empty>}
-    {orders.map(order => <article className="dining-order" key={order.id}><header><div className="dining-order-heading"><strong>#{order.id}</strong><span className={`dining-status ${order.status}`}>{c(order.status)}</span></div><strong className="dining-order-amount">{money(orderTotal(order.items))} ₭</strong><p><time>{new Date(order.createdAt).toLocaleTimeString(language, { timeZone: 'Asia/Vientiane', hour: '2-digit', minute: '2-digit', hour12: false })}</time><span>·</span>{relative(order.createdAt)}</p></header>
-      <div className="dining-order-lines">{order.items.map((item, index) => <div className="dining-order-line" key={index}><img src={item.image} alt="" width="62" height="62"/><div><h3>{item.quantity}× {customerItemName(item, language)}</h3><p>{itemOptions(item, language, c)}</p></div><strong>{money(item.price * item.quantity)} ₭</strong></div>)}</div>
-      {order.paid && <div className="dining-order-paid"><CheckCircle2 size={15}/>{c('paid')}</div>}
-    </article>)}
+    {orders.map(order => {
+      const status = customerOrderStatus(order.status);
+      return <article className="dining-order" key={order.id}><header><div className="dining-order-heading"><strong>#{order.id}</strong><span className={`dining-status ${status}`}>{c(status)}</span></div><strong className="dining-order-amount">{money(orderTotal(order.items))} ₭</strong><p><time>{new Date(order.createdAt).toLocaleTimeString(language, { timeZone: 'Asia/Vientiane', hour: '2-digit', minute: '2-digit', hour12: false })}</time><span>·</span>{relative(order.createdAt)}</p></header>
+        <div className="dining-order-lines">{order.items.map((item, index) => <div className="dining-order-line" key={index}><img src={item.image} alt="" width="62" height="62"/><div><h3>{item.quantity}× {customerItemName(item, language)}</h3><p>{itemOptions(item, language, c)}</p></div><strong>{money(item.price * item.quantity)} ₭</strong></div>)}</div>
+        {order.paid && <div className="dining-order-paid"><CheckCircle2 size={15}/>{c('paid')}</div>}
+      </article>;
+    })}
   </section>{orders.length > 0 && <div ref={footerRef} className="dining-order-summary"><div><span>{c('total')}</span><strong>{money(summary.total)} ₭</strong></div>{summary.paid > 0 && <div className="dining-paid-total"><span>{c('paid')}</span><span>{money(summary.paid)} ₭</span></div>}<div className="dining-amount-due"><strong>{c('due')}</strong><strong>{money(summary.due)} ₭</strong></div></div>}</>;
 }
 

@@ -1,9 +1,9 @@
 import React from 'react';
-import { Armchair, Banknote, BellRing, Check, CheckCircle2, Clock3, CookingPot, GlassWater, Hand, Hourglass, LayoutGrid, Users, Utensils } from 'lucide-react';
+import { Armchair, Banknote, BellRing, Check, CheckCircle2, Clock3, CookingPot, GlassWater, Hand, LayoutGrid, Users, Utensils } from 'lucide-react';
 import { EmptyState, money, pad, statusText, useL } from './staff-ui';
 import { matchesStaffTable, nextStaffOrder, summarizeStaffTable } from './staff-model.mjs';
 
-export const staffStatusIcons = { pending: Banknote, queued: Hourglass, cooking: CookingPot, ready: BellRing, served: Utensils, empty: Armchair };
+export const staffStatusIcons = { pending: Banknote, queued: CookingPot, cooking: CookingPot, ready: BellRing, served: Utensils, empty: Armchair };
 export const staffStatusGroup = status => ['queued', 'cooking'].includes(status) ? 'kitchen' : status;
 const callIcons = { help: Hand, pay: Banknote, water: GlassWater };
 const callLabel = (reason, t) => ({ help: t('ເອີ້ນພະນັກງານ', 'เรียกพนักงาน'), pay: t('ຂໍຈ່າຍເງິນທີ່ໂຕະ', 'ขอจ่ายเงินที่โต๊ะ'), water: t('ຂໍນ້ຳເປົ່າ', 'ขอน้ำเปล่า') }[reason]);
