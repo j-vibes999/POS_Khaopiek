@@ -1,11 +1,12 @@
-import { orderTotal, nextOrderStatus } from './order-model.mjs';
-import { normalizeBackOffice } from './backoffice-model.mjs';
+import { orderTotal, nextOrderStatus, isActiveOrder, needsKitchenHandoff } from './order-model.mjs';
+import { canOpen, normalizeBackOffice, paymentMethods, resolveStaffUser } from './backoffice-model.mjs';
 
 // Orders from before the table was last cleared belong to earlier guests.
 export const customerOrders = (orders, table, clearedAt = 0) => orders.filter(order => order.table === table && (!clearedAt || order.createdAt > clearedAt));
 
 export function summarizeCustomerOrders(orders) {
   return orders.reduce((summary, order) => {
+    if (order.status === 'rejected') return summary;
     const amount = orderTotal(order.items);
     summary.total += amount;
     summary[order.paid ? 'paid' : 'due'] += amount;
@@ -42,10 +43,11 @@ export function tableFromSearch(search, tableCount) {
 }
 
 export const DEMO_STORAGE_KEY = 'khao-piek:demo:v1';
+export const LAN_ORDER_ID_START = 1_000_000;
 const validItems = items => Array.isArray(items) && items.every(item => item && typeof item.id === 'string'
   && Number.isFinite(item.price) && item.price >= 0 && Number.isInteger(item.quantity) && item.quantity > 0);
 const validOrder = order => /^\d+$/.test(order?.id) && Number.isInteger(order.table) && validItems(order.items)
-  && typeof order.paid === 'boolean' && ['pending', 'queued', 'cooking', 'ready', 'served', 'completed'].includes(order.status);
+  && typeof order.paid === 'boolean' && ['pending', 'queued', 'cooking', 'ready', 'served', 'completed', 'rejected'].includes(order.status);
 const validDraft = draft => validItems(draft?.cart) && ['cash', 'transfer'].includes(draft.method);
 
 export function readDemoSession(storage) {
@@ -81,6 +83,28 @@ export function updateDemoSession(storage, current, change) {
   return next;
 }
 
+// The LAN inbox owns its order numbers. Keep local edits that are newer than
+// the inbox snapshot and recover any already confirmed orders after a reload.
+export function mergeLanOrders(session, inbox) {
+  const remote = new Map(inbox.filter(order => validOrder(order) && Number(order.id) >= LAN_ORDER_ID_START).map(order => [order.id, order]));
+  let changed = false;
+  const orders = session.orders.map(local => {
+    const order = remote.get(local.id);
+    remote.delete(local.id);
+    if (!order || order.createdAt !== local.createdAt || (local.paid && !order.paid)) return local;
+    if ((order.paid && !local.paid) || (order.lanChangedAt ?? 0) > (local.lanChangedAt ?? 0)) {
+      changed = true;
+      return order;
+    }
+    return local;
+  });
+  return changed || remote.size ? { ...session, orders: [...remote.values(), ...orders].sort((a, b) => b.createdAt - a.createdAt) } : session;
+}
+
+const stampLanOrder = (order, next, now) => Number(order.id) >= LAN_ORDER_ID_START
+  ? { ...next, lanChangedAt: Math.max(now, (order.lanChangedAt ?? 0) + 1) }
+  : next;
+
 export function applyOrderAction(session, id, action, method, now = Date.now()) {
   const target = session.orders.find(order => order.id === id);
   if (!target) {
@@ -89,11 +113,18 @@ export function applyOrderAction(session, id, action, method, now = Date.now()) 
   }
   // A payment dialog in another tab may still show an order that has already been paid.
   if (action === 'pay' && (target.paid || target.status !== 'pending')) throw Object.assign(new Error('The order is already paid or has changed'), { code: 'already-paid' });
-  // paidAt places each payment in the cash shift that was open when it was taken.
-  const paidAt = action === 'pay' && target.status === 'pending' ? now : target.paidAt;
-  const orders = session.orders.map(order => order.id === id ? { ...order, status: nextOrderStatus(order, action), paid: action === 'pay' ? true : order.paid, paidAt, method: method || order.method } : order);
+  const status = nextOrderStatus(target, action);
+  let updated;
+  if (action === 'pay') {
+    updated = { ...target, status, paid: true, paidAt: now, method: method || target.method, kitchenPending: true };
+  } else if (action === 'kitchen-sent' && needsKitchenHandoff(target)) {
+    updated = { ...target, status: 'cooking', kitchenPending: false, kitchenSentAt: now };
+  } else if (status !== target.status) {
+    updated = { ...target, status };
+  } else return session;
+  const orders = session.orders.map(order => order.id === id ? stampLanOrder(order, updated, now) : order);
   // Closing a table's last open order clears it for the next guests.
-  const cleared = action === 'close' && orders.every(order => order.table !== target.table || order.status === 'completed');
+  const cleared = action === 'close' && orders.every(order => order.table !== target.table || !isActiveOrder(order));
   if (!cleared) return { ...session, orders };
   const calls = { ...session.calls };
   delete calls[target.table];
@@ -116,7 +147,7 @@ export function undoOrderAction(session, previous, clearedAt, status, callBefore
   // Only a last-order close clears calls; a newer request always takes precedence.
   const restoreCall = callBefore && previous.status === 'served' && current.status === 'completed'
     && session.clearedAt[previous.table] !== clearedAt && !session.calls?.[previous.table];
-  return { ...session, orders: session.orders.map(order => order.id === previous.id ? previous : order), clearedAt: restored,
+  return { ...session, orders: session.orders.map(order => order.id === previous.id ? stampLanOrder(order, previous, Date.now()) : order), clearedAt: restored,
     ...(restoreCall ? { calls: { ...session.calls, [previous.table]: callBefore } } : {}) };
 }
 
@@ -124,6 +155,23 @@ export function undoOrderAction(session, previous, clearedAt, status, callBefore
 export function checkoutReviewKey(table, cart, effectiveMethod) {
   return JSON.stringify([table, cart, effectiveMethod], (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
     ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+}
+
+export function confirmOrderPayment(session, reviewed, { userId, method, received }, now = Date.now()) {
+  const fail = code => { throw Object.assign(new Error(code), { code }); };
+  const actor = resolveStaffUser(session.staff, userId);
+  if (!actor || !canOpen(actor.role, 'orders')) fail('access-denied');
+
+  const order = session.orders.find(item => item.id === reviewed.id);
+  if (!order || order.createdAt !== reviewed.createdAt) fail('changed');
+  if (order.paid || order.status !== 'pending') fail('already-paid');
+  if (checkoutReviewKey(order.table, order.items, order.method) !== checkoutReviewKey(reviewed.table, reviewed.items, reviewed.method)) fail('changed');
+  if (!paymentMethods.includes(method) || !session.settings.methods.includes(method)) fail('method');
+
+  const total = orderTotal(order.items);
+  if (!Number.isSafeInteger(total) || total < 0) fail('amount');
+  if (method === 'cash' && (!Number.isSafeInteger(received) || received < total)) fail('amount');
+  return applyOrderAction(session, order.id, 'pay', method, now);
 }
 
 export function commitCheckout(storage, session, table, source, createdAt = Date.now(), reviewedKey) {
@@ -137,7 +185,12 @@ export function commitCheckout(storage, session, table, source, createdAt = Date
   }
   if (!draft?.cart.length) throw new Error('The basket is empty');
   if (draft.cart.some(item => session.soldOut?.includes(item.id))) throw Object.assign(new Error('Sold-out dishes are in the basket'), { code: 'sold-out' });
-  const orderId = String(Math.max(1024, ...session.orders.map(order => Number(order.id))) + 1);
+  const nextId = session.orders.reduce((max, order) => {
+    const id = Number(order.id);
+    return id < LAN_ORDER_ID_START ? Math.max(id, max) : max;
+  }, 1024) + 1;
+  if (nextId >= LAN_ORDER_ID_START) throw new Error('Local order numbers are exhausted');
+  const orderId = String(nextId);
   const order = { id: orderId, table, items: draft.cart, source, status: 'pending', paid: false, method, createdAt };
   const next = {
     ...session,

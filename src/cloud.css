@@ -1,0 +1,20 @@
+.cloud-entry{min-height:100dvh;display:grid;place-items:center;padding:28px 18px;background:var(--bg,#f6f7f2)}
+.cloud-access-card{width:100%;max-width:450px;padding:34px;background:#fff;border:1px solid var(--line,#dce2d5);border-radius:16px;color:var(--text,#273c32)}
+.cloud-brand{display:flex;align-items:center;gap:12px;color:var(--green,#28583e);margin-bottom:28px;letter-spacing:.02em}
+.cloud-access-card h1{font-size:27px;line-height:1.55;margin:0 0 10px}
+.cloud-access-card>p{font-size:16px;line-height:1.8;color:#5d6b5d;margin:0 0 24px}
+.cloud-access-card .form-field input{min-height:52px;font-size:16px;width:100%}
+.cloud-access-card .button{min-height:52px;font-size:16px}
+.cloud-error{color:#9d3527;background:#fff0e9;padding:12px 14px;border-radius:8px;font-size:15px;line-height:1.8;margin:0}
+.cloud-success{color:#28583e;background:#eef5e8;padding:12px 14px;border-radius:8px;font-size:15px;line-height:1.8;margin:0}
+.cloud-saving{padding:8px 24px;background:#edf3e7;color:#365b36;font-size:14px}
+.cloud-loading{min-height:100dvh;display:grid;place-items:center;font-size:18px;color:#365b36}
+.cloud-app .main-nav>button>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cloud-app .sidebar-bottom .profile{width:100%;text-align:left}
+.topbar.staff-topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 16px; }
+.staff-topbar > .location-label { min-width: 0; }
+.staff-topbar > .location-label > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.staff-topbar > .order-alerts { justify-self: center; }
+.staff-topbar > .topbar-actions { justify-self: end; min-width: 0; }
+@media (max-width: 600px) { .topbar.staff-topbar { gap: 12px; } }
+@media(max-width:600px){.cloud-access-card{padding:26px 22px}.cloud-entry{align-items:start;padding-top:max(30px,env(safe-area-inset-top))}.cloud-app .mobile-nav>button{font-size:12px;gap:6px}}

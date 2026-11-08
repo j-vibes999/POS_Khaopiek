@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="lo">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>POS storage failure verification</title></head>
+<body>
+  <div id="root"></div>
+  <button id="storage-toggle" type="button" style="position:fixed;right:12px;bottom:90px;z-index:1000;padding:12px;background:#222;color:#fff;border-radius:8px">QA: storage blocked</button>
+  <script type="module">
+    // Isolated browser fixture: fail only demo writes while exercising the real app.
+    let blocked = true;
+    const originalSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (blocked && key === 'khao-piek:demo:v1') throw new DOMException('Fixture storage quota exceeded', 'QuotaExceededError');
+      return originalSetItem.call(this, key, value);
+    };
+    document.querySelector('#storage-toggle').addEventListener('click', event => {
+      blocked = !blocked;
+      event.currentTarget.textContent = `QA: storage ${blocked ? 'blocked' : 'available'}`;
+    });
+    await import('/src/main.jsx');
+  </script>
+</body>
+</html>

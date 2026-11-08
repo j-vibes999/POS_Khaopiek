@@ -1,49 +1,58 @@
-import React from 'react';
-import { Armchair, Banknote, BellRing, Check, CheckCircle2, Clock3, CookingPot, GlassWater, Hand, LayoutGrid, Users, Utensils } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { Armchair, Banknote, BellRing, Check, CheckCircle2, Clock3, CookingPot, GlassWater, Hand, LayoutGrid, Printer, Users, Utensils } from 'lucide-react';
 import { EmptyState, money, pad, statusText, useL } from './staff-ui';
-import { matchesStaffTable, nextStaffOrder, summarizeStaffTable } from './staff-model.mjs';
+import { matchesStaffTable, nextStaffOrder, staffOrderState, summarizeStaffTable } from './staff-model.mjs';
 
-export const staffStatusIcons = { pending: Banknote, queued: CookingPot, cooking: CookingPot, ready: BellRing, served: Utensils, empty: Armchair };
+export const staffStatusIcons = { pending: Banknote, handoff: Printer, queued: CookingPot, cooking: CookingPot, ready: BellRing, served: Utensils, empty: Armchair };
 export const staffStatusGroup = status => ['queued', 'cooking'].includes(status) ? 'kitchen' : status;
 const callIcons = { help: Hand, pay: Banknote, water: GlassWater };
 const callLabel = (reason, t) => ({ help: t('ເອີ້ນພະນັກງານ', 'เรียกพนักงาน'), pay: t('ຂໍຈ່າຍເງິນທີ່ໂຕະ', 'ขอจ่ายเงินที่โต๊ะ'), water: t('ຂໍນ້ຳເປົ່າ', 'ขอน้ำเปล่า') }[reason]);
 
+export function StaffStatusFilters({ filters, current, count, unit, label, onSelect }) {
+  return <div className="counter-task-filters" role="group" aria-label={label}>
+    {filters.map(([id, name, Icon]) => {
+      const selected = current === id;
+      const total = count(id);
+      return <button key={id} className={`counter-task-filter ${id}${selected ? ' is-selected' : ''}`} aria-pressed={selected} aria-label={`${name} · ${total} ${unit}`} onClick={() => onSelect(id)}>
+        <span className="counter-filter-top"><Icon size={19} aria-hidden="true"/><b>{total}</b></span>
+        <span className="counter-filter-label"><span>{name}</span>{selected && <Check size={15} aria-hidden="true"/>}</span>
+      </button>;
+    })}
+  </div>;
+}
+
 export function TablesScreen({ tables, activeOrders, calls, activeTable, filter, setFilter, now, onSelect }) {
   const { t } = useL();
   const states = tables.map(table => ({ table, ...summarizeStaffTable(activeOrders.filter(order => order.table === table.number), calls[table.number]) }));
-  const mainFilters = [
+  const filters = [
     ['all', t('ທຸກໂຕະ', 'ทุกโต๊ะ'), LayoutGrid],
-    ['pending', t('ລໍຖ້າຮັບເງິນ', 'รอรับเงิน'), Banknote],
+    ['pending', statusText('pending', t), Banknote],
+    ['handoff', statusText('handoff', t), Printer],
+    ['kitchen', statusText('cooking', t), CookingPot],
     ['ready', t('ພ້ອມເສີບ', 'พร้อมเสิร์ฟ'), BellRing],
+    ['served', statusText('served', t), Utensils],
     ['calls', t('ລູກຄ້າເອີ້ນ', 'ลูกค้าเรียก'), Hand],
-  ];
-  const otherFilters = [['kitchen', t('ຢູ່ໃນຄົວ', 'อยู่ในครัว')], ['served', t('ເສີບແລ້ວ', 'เสิร์ฟแล้ว')], ['empty', t('ໂຕະຫວ່າງ', 'โต๊ะว่าง')]];
-  const validFilters = [...mainFilters, ...otherFilters];
-  const current = validFilters.some(([id]) => id === filter) ? filter : 'all';
+    ['empty', statusText('empty', t), Armchair],
+  ].filter(([id]) => !['handoff', 'ready', 'calls'].includes(id) || states.some(state => matchesStaffTable(state, id)));
+  const [current, selectedLabel, SelectedIcon] = filters.find(([id]) => id === filter) ?? filters[0];
+  useEffect(() => {
+    if (current !== filter) setFilter(current);
+  }, [current, filter, setFilter]);
   const count = id => states.filter(state => matchesStaffTable(state, id)).length;
   const shown = states.filter(state => matchesStaffTable(state, current));
   const zoneName = table => table.zone || t('ຊັ້ນ 1', 'ชั้น 1');
   const zones = [...new Set(tables.map(zoneName))];
-  const waiting = states.filter(state => state.call || state.pendingCount || state.readyCount).length;
-  const selectedLabel = validFilters.find(([id]) => id === current)[1];
+  const waiting = states.filter(state => state.call || state.pendingCount || state.readyCount || matchesStaffTable(state, 'handoff')).length;
 
   return <section className="table-workspace counter-workspace" aria-labelledby="counter-title">
     <div className="page-heading"><div><h1 id="counter-title">{t('ໜ້າຮ້ານ', 'หน้าร้าน')}</h1><p>{waiting
       ? t(`${waiting} ໂຕະລໍຖ້າທ່ານ · ເລືອກໂຕະເພື່ອເຮັດຕໍ່`, `${waiting} โต๊ะรอคุณอยู่ · เลือกโต๊ะเพื่อทำต่อ`)
       : t('ບໍ່ມີວຽກດ່ວນ · ເລືອກໂຕະເພື່ອເບິ່ງອໍເດີ', 'ไม่มีงานด่วน · เลือกโต๊ะเพื่อดูออเดอร์')}</p></div></div>
 
-    <div className="counter-task-filters" role="group" aria-label={t('ວຽກໜ້າຮ້ານ', 'งานหน้าร้าน')}>
-      {mainFilters.map(([id, label, Icon]) => <button key={id} className={`counter-task-filter ${id} ${current === id ? 'is-selected' : ''}`} aria-pressed={current === id} onClick={() => setFilter(id)}>
-        <span><Icon size={20}/>{label}</span><b>{count(id)}</b>
-      </button>)}
-    </div>
+    <StaffStatusFilters filters={filters} current={current} count={count} unit={t('ໂຕະ', 'โต๊ะ')} label={t('ວຽກໜ້າຮ້ານ', 'งานหน้าร้าน')} onSelect={setFilter}/>
 
     <div className="counter-results-bar">
       <h2>{selectedLabel}<span>{shown.length} {t('ໂຕະ', 'โต๊ะ')}</span></h2>
-      <label className="counter-other-filter"><span>{t('ສະຖານະອື່ນ', 'สถานะอื่น')}</span><select value={otherFilters.some(([id]) => id === current) ? current : ''} onChange={event => setFilter(event.target.value || 'all')}>
-        <option value="">{t('ເລືອກສະຖານະ', 'เลือกสถานะ')}</option>
-        {otherFilters.map(([id, label]) => <option key={id} value={id}>{label} ({count(id)})</option>)}
-      </select></label>
     </div>
 
     {shown.length ? zones.map(zone => {
@@ -52,7 +61,7 @@ export function TablesScreen({ tables, activeOrders, calls, activeTable, filter,
         {zones.length > 1 && <h3 className="zone-title">{zone}<span>{inZone.length}</span></h3>}
         <div className="table-grid counter-table-grid">{inZone.map(state => <CounterTable key={state.table.number} {...state} filter={current} active={activeTable === state.table.number} now={now} onSelect={() => onSelect(state.table.number)}/>)}</div>
       </div>;
-    }) : <EmptyState icon={current === 'calls' ? Hand : LayoutGrid} title={t('ບໍ່ມີໂຕະໃນລາຍການນີ້', 'ไม่มีโต๊ะในรายการนี้')} text={t('ເລືອກ “ທຸກໂຕະ” ເພື່ອເບິ່ງໜ້າຮ້ານ', 'เลือก “ทุกโต๊ะ” เพื่อดูหน้าร้าน')}>
+    }) : <EmptyState icon={SelectedIcon} title={t('ບໍ່ມີໂຕະໃນລາຍການນີ້', 'ไม่มีโต๊ะในรายการนี้')} text={t('ເລືອກ “ທຸກໂຕະ” ເພື່ອເບິ່ງໜ້າຮ້ານ', 'เลือก “ทุกโต๊ะ” เพื่อดูหน้าร้าน')}>
       <button className="button secondary" onClick={() => setFilter('all')}>{t('ເບິ່ງທຸກໂຕະ', 'ดูทุกโต๊ะ')}</button>
     </EmptyState>}
   </section>;
@@ -61,7 +70,7 @@ export function TablesScreen({ tables, activeOrders, calls, activeTable, filter,
 function CounterTable({ table, orders, due, readyCount, call, filter, active, now, onSelect }) {
   const { t } = useL();
   const order = nextStaffOrder(orders, null, filter);
-  const status = order?.status ?? 'empty';
+  const status = order ? staffOrderState(order) : 'empty';
   const Icon = staffStatusIcons[status];
   const CallIcon = call && callIcons[call.reason];
   const minutes = order ? Math.max(0, Math.floor((now.getTime() - (order.paidAt ?? order.createdAt)) / 60000)) : 0;

@@ -7,7 +7,10 @@ import './customer.css';
 
 const money = amount => new Intl.NumberFormat('en-US').format(amount);
 const tableCode = table => `T ${String(table).padStart(2, '0')}`;
-const currentTab = () => ['orders', 'call', 'cart'].includes(location.hash.split('/')[1]) ? location.hash.split('/')[1] : 'menu';
+const currentTab = canCall => {
+  const tab = location.hash.split('/')[1];
+  return tab === 'orders' || tab === 'cart' || (tab === 'call' && canCall) ? tab : 'menu';
+};
 
 function Flag({ language }) {
   const props = { width: 26, height: 19, viewBox: '0 0 30 21', 'aria-hidden': true, className: 'dining-flag' };
@@ -19,7 +22,7 @@ function Flag({ language }) {
   return <svg {...props}><rect width="30" height="21" fill="white"/><path d="M15 5a5.5 5.5 0 1 1 0 11Z" fill="#c73548"/><path d="M15 5a5.5 5.5 0 0 0 0 11Z" fill="#275197"/><path d="m3 4 3-2m-2 4 3-2m16 13 3-2m-2 4 3-2M3 16l3 2m-2-4 3 2M23 3l3 2m-2-4 3 2" stroke="#252c38" strokeWidth="1.1"/></svg>;
 }
 
-function LanguageMenu({ language, setLanguage, c }) {
+export function LanguageMenu({ language, setLanguage, c }) {
   const [open, setOpen] = useState(false);
   const container = useRef();
   const trigger = useRef();
@@ -80,7 +83,7 @@ function FoodOptions({ item, initialItem, language, c, onClose, onAdd, error }) 
       <label className="dining-note-label">{c('note')}<span>{c('optional')}</span><textarea rows={2} maxLength={150} value={note} onChange={event => setNote(event.target.value)} placeholder={c('noteHint')}/></label>
     </div></div>
     {error && <p className="dining-option-error" role="alert">{error}</p>}
-    <div className="dining-option-bottom"><Quantity quantity={quantity} onChange={setQuantity} c={c}/><button className="dining-primary" onClick={add}>{initialItem ? <Check size={20}/> : <Plus size={20}/>}<span>{c(initialItem ? 'saveChanges' : 'add')}<strong>{money(price * quantity)} ₭</strong></span></button></div>
+    <div className="dining-option-bottom"><Quantity quantity={quantity} onChange={setQuantity} c={c}/><button className="dining-primary" onClick={add}>{initialItem ? <Check size={20}/> : <Plus size={20}/>}<span>{c(initialItem ? 'saveChanges' : 'addToBasket')}<strong>{money(price * quantity)} ₭</strong></span></button></div>
   </dialog>;
 }
 
@@ -89,11 +92,12 @@ function itemOptions(item, language, c) {
   return [item.category !== 'drinks' ? c(item.size === 'large' ? 'large' : 'regular') : '', item.noHerbs ? c('noVeg') : '', note].filter(Boolean).join(' · ');
 }
 
-export function OrderConfirmation({ review, language, c, busy, error, onClose, onConfirm }) {
+export function OrderConfirmation({ review, language, c, busy, error, onClose, onConfirm, retrying = false }) {
   const ref = useRef();
   const heading = useRef();
   const titleId = useId();
   const hintId = useId();
+  const paymentHintId = useId();
   useEffect(() => {
     const trigger = document.activeElement;
     const overflow = document.body.style.overflow;
@@ -108,53 +112,73 @@ export function OrderConfirmation({ review, language, c, busy, error, onClose, o
     if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose();
   }
   const count = review.items.reduce((sum, item) => sum + item.quantity, 0);
-  return <dialog ref={ref} className="dining-confirmation" aria-labelledby={titleId} aria-describedby={hintId} aria-busy={busy} onCancel={event => { event.preventDefault(); if (!busy) onClose(); }} onClick={dismiss}>
-    <header className="dining-confirmation-head"><div><h2 id={titleId} ref={heading} tabIndex={-1}>{c('reviewOrder')}</h2><p id={hintId}>{c('confirmOrderHint')}</p></div><button className="dining-confirmation-close" aria-label={c('close')} disabled={busy} onClick={onClose}><X size={22}/></button></header>
+  return <dialog ref={ref} className="dining-confirmation" aria-labelledby={titleId} aria-describedby={retrying ? paymentHintId : hintId} aria-busy={busy} onCancel={event => { event.preventDefault(); if (!busy) onClose(); }} onClick={dismiss}>
+    <header className="dining-confirmation-head"><div><h2 id={titleId} ref={heading} tabIndex={-1}>{c(retrying ? 'retryCheckout' : 'reviewOrder')}</h2>{!retrying && <p id={hintId}>{c('confirmOrderHint')}</p>}</div><button className="dining-confirmation-close" aria-label={c('close')} disabled={busy} onClick={onClose}><X size={22}/></button></header>
     <div className="dining-confirmation-scroll">
       <div className="dining-confirmation-table"><span>{c('table')}<strong>{tableCode(review.table)}</strong></span><span>{c('items', { count })}</span></div>
       <ul className="dining-confirmation-items">{review.items.map(item => <li key={item.key}><b>{item.quantity}×</b><div><h3>{customerItemName(item, language)}</h3><p>{itemOptions(item, language, c)}</p></div><strong>{money(item.price * item.quantity)} ₭</strong></li>)}</ul>
-      <div className="dining-confirmation-method"><span>{c('payment')}</span><strong>{c(review.method)}</strong><p>{c('payAtCashier')}</p></div>
     </div>
     <footer className="dining-confirmation-footer">
       <div className="dining-confirmation-total"><span>{c('total')}</span><strong>{money(orderTotal(review.items))} ₭</strong></div>
+      <div className="dining-confirmation-method"><span>{c('payment')}</span><strong>{c(review.method === 'transfer' ? 'transferAtCounter' : review.method)}</strong></div>
+      <p className="dining-confirmation-payment-hint" id={paymentHintId}>{c(retrying ? 'retryCheckoutHint' : review.method === 'cash' ? 'payCashFirst' : 'transferFirst')}</p>
       {error && <p className="dining-confirmation-error" role="alert">{error}</p>}
-      <div className="dining-confirmation-actions"><button className="dining-secondary" disabled={busy} onClick={onClose}>{c('backToCart')}</button><button className="dining-primary" disabled={busy} onClick={onConfirm}><Check size={20}/>{c(busy ? 'sendingOrder' : 'confirmOrder')}</button></div>
+      <div className="dining-confirmation-actions">
+        <button className="dining-secondary" disabled={busy} onClick={onClose}>{c('backToCart')}</button>
+        <button className="dining-primary" aria-describedby={paymentHintId} disabled={busy} onClick={onConfirm}><Check size={20}/>{c(busy ? 'sending' : retrying ? 'retryCheckout' : 'confirmOrder')}</button>
+      </div>
     </footer>
   </dialog>;
 }
 
-const customerOrderStatus = status => status === 'queued' ? 'cooking' : status;
+function customerOrderStatus(order) {
+  if (!order?.paid && ['queued', 'cooking', 'ready'].includes(order?.status)) return 'pending';
+  if (order?.status !== 'queued') return order?.status;
+  return order.kitchenPending === true && !order.kitchenSentAt ? 'kitchenHandoff' : 'cooking';
+}
 
-function OrderHistory({ orders, language, c, now, onMenu, footerRef, recentOrderId }) {
+function OrderHistory({ orders, language, c, now, onMenu, footerRef, recentOrderId, recentOrderNumber, ordersStatus, onRetryOrders }) {
   const summary = summarizeCustomerOrders(orders);
   const recentOrder = orders.find(order => order.id === recentOrderId && order.status !== 'completed');
   const activeOrder = recentOrder || orders.find(order => order.status === 'pending') || orders.find(order => order.status !== 'completed');
-  const activeStatus = customerOrderStatus(activeOrder?.status);
+  const activeStatus = customerOrderStatus(activeOrder);
+  const guidanceHint = { pending: 'paymentNext', rejected: 'rejectedHint' }[activeStatus];
   function relative(date) {
     const minutes = Math.max(0, Math.floor((now - date) / 60000));
     return minutes === 0 ? c('justNow') : c('minutesAgo', { count: minutes });
   }
   return <><section className="dining-order-list">
+    {!recentOrder && recentOrderId && ordersStatus && !orders.some(order => order.id === recentOrderId) && <div className="dining-order-guidance pending" role="status"><CheckCircle2 size={25}/><div><h2>{c('orderReceived', { id: recentOrderNumber ?? recentOrderId })}</h2>{ordersStatus === 'loading' && <p>{c('loadingOrders')}</p>}</div></div>}
     {activeOrder && <div className={`dining-order-guidance ${activeStatus}`}>
-      {recentOrder && activeStatus === 'pending' ? <CheckCircle2 size={25}/> : activeStatus === 'pending' ? <Banknote size={25}/> : activeStatus === 'cooking' ? <ChefHat size={25}/> : <CheckCircle2 size={25}/>}
-      <div><h2>{recentOrder && activeStatus === 'pending' ? c('orderReceived', { id: recentOrder.id }) : c(`next_${activeStatus}`)}</h2><p>{c(activeStatus === 'pending' ? 'paymentNext' : 'kitchenNext')}</p></div>
+      {activeStatus === 'rejected' ? <AlertCircle size={25}/> : activeStatus === 'pending' && !recentOrder ? <Banknote size={25}/> : activeStatus === 'cooking' ? <ChefHat size={25}/> : activeStatus === 'kitchenHandoff' ? <ClipboardList size={25}/> : <CheckCircle2 size={25}/>}
+      <div>
+        <h2>{recentOrder && activeStatus === 'pending' ? c('orderReceived', { id: recentOrder.orderNumber ?? recentOrder.id }) : c(`next_${activeStatus}`)}</h2>
+        {guidanceHint && <p>{c(guidanceHint)}</p>}
+      </div>
     </div>}
-    {!orders.length && <Empty icon={ClipboardList} title={c('emptyOrders')} description={c('pickFood')}><button className="dining-primary" onClick={onMenu}><BookOpen size={20}/>{c('openMenu')}</button></Empty>}
+    {ordersStatus === 'error' && <div className="dining-order-guidance" role="status"><AlertCircle size={25}/><div><h2>{c('ordersUnavailable')}</h2><button className="dining-secondary" onClick={onRetryOrders}>{c('retry')}</button></div></div>}
+    {ordersStatus === 'loading' && !orders.length && !recentOrderId && <p role="status">{c('loadingOrders')}</p>}
+    {!ordersStatus && !orders.length && <Empty icon={ClipboardList} title={c('emptyOrders')} description={c('pickFood')}><button className="dining-primary" onClick={onMenu}><BookOpen size={20}/>{c('openMenu')}</button></Empty>}
     {orders.map(order => {
-      const status = customerOrderStatus(order.status);
-      return <article className="dining-order" key={order.id}><header><div className="dining-order-heading"><strong>#{order.id}</strong><span className={`dining-status ${status}`}>{c(status)}</span></div><strong className="dining-order-amount">{money(orderTotal(order.items))} ₭</strong><p><time>{new Date(order.createdAt).toLocaleTimeString(language, { timeZone: 'Asia/Vientiane', hour: '2-digit', minute: '2-digit', hour12: false })}</time><span>·</span>{relative(order.createdAt)}</p></header>
+      const status = customerOrderStatus(order);
+      return <article className="dining-order" key={order.id}><header><div className="dining-order-heading"><strong>#{order.orderNumber ?? order.id}</strong><span className={`dining-status ${status}`}>{c(status)}</span></div><strong className="dining-order-amount">{money(orderTotal(order.items))} ₭</strong><p><time>{new Date(order.createdAt).toLocaleTimeString(language, { timeZone: 'Asia/Vientiane', hour: '2-digit', minute: '2-digit', hour12: false })}</time><span>·</span>{relative(order.createdAt)}</p></header>
         <div className="dining-order-lines">{order.items.map((item, index) => <div className="dining-order-line" key={index}><img src={item.image} alt="" width="62" height="62"/><div><h3>{item.quantity}× {customerItemName(item, language)}</h3><p>{itemOptions(item, language, c)}</p></div><strong>{money(item.price * item.quantity)} ₭</strong></div>)}</div>
-        {order.paid && <div className="dining-order-paid"><CheckCircle2 size={15}/>{c('paid')}</div>}
+        {order.paid && status !== 'kitchenHandoff' && <div className="dining-order-paid"><CheckCircle2 size={15}/>{c('paid')}</div>}
+        {status === 'rejected' && order.id !== activeOrder?.id && <p className="dining-order-rejected">{c('rejectedHint')}</p>}
       </article>;
     })}
-  </section>{orders.length > 0 && <div ref={footerRef} className="dining-order-summary"><div><span>{c('total')}</span><strong>{money(summary.total)} ₭</strong></div>{summary.paid > 0 && <div className="dining-paid-total"><span>{c('paid')}</span><span>{money(summary.paid)} ₭</span></div>}<div className="dining-amount-due"><strong>{c('due')}</strong><strong>{money(summary.due)} ₭</strong></div></div>}</>;
+  </section>{orders.some(order => order.status !== 'rejected') && <div ref={footerRef} className="dining-order-summary"><div><span>{c('total')}</span><strong>{money(summary.total)} ₭</strong></div>{summary.paid > 0 && <div className="dining-paid-total"><span>{c('paid')}</span><span>{money(summary.paid)} ₭</span></div>}{summary.due > 0 && <div className="dining-amount-due"><strong>{c('unverifiedTotal')}</strong><strong>{money(summary.due)} ₭</strong></div>}</div>}</>;
 }
 
 function Empty({ icon: Icon, title, description, children }) {
   return <div className="dining-empty"><span><Icon size={40} strokeWidth={1.35}/></span><h2>{title}</h2><p>{description}</p>{children}</div>;
 }
 
-function CartItem({ item, language, c, soldOut, onQuantity, onEdit, onRemove }) {
+export function PaymentRecovery({ amount, c, pending = false, onClose }) {
+  return <div className="dining-payment-recovery"><div role="alert"><h2>{c('paymentRecoveryTitle')}</h2><strong>{c('originalPaymentAmount', { amount: money(amount) })} ₭</strong><p>{c(pending ? 'retryCheckoutHint' : 'paymentRecoveryHint')}</p></div>{onClose && <button className="dining-secondary" onClick={onClose}>{c('paymentRecoveryDone')}</button>}</div>;
+}
+
+function CartItem({ item, language, c, soldOut, locked, onQuantity, onEdit, onRemove }) {
   const name = customerItemName(item, language);
   return <article className={`dining-cart-item ${soldOut ? 'is-sold-out' : ''}`}>
     <img src={item.image} alt="" width="84" height="84"/>
@@ -163,59 +187,70 @@ function CartItem({ item, language, c, soldOut, onQuantity, onEdit, onRemove }) 
       <p>{itemOptions(item, language, c)}</p>
       <strong className="dining-cart-line-total">{money(item.price * item.quantity)} ₭</strong>
     </div>
-    <div className="dining-cart-item-controls">
+    {locked ? <strong>{item.quantity}×</strong> : <div className="dining-cart-item-controls">
       {soldOut ? <span className="dining-cart-sold-out">{c('soldOut')}</span> : <div role="group" aria-label={name}><Quantity quantity={item.quantity} onChange={onQuantity} c={c}/></div>}
       <div className="dining-cart-item-actions">
         {!soldOut && <button className="dining-edit" aria-label={`${c('edit')} ${name}`} onClick={onEdit}><Pencil size={17}/>{c('edit')}</button>}
         <button className="dining-remove" aria-label={`${c('remove')} ${name}`} onClick={onRemove}><Trash2 size={20}/></button>
       </div>
-    </div>
+    </div>}
   </article>;
 }
 
 const callIcons = { help: Hand, pay: Banknote, water: GlassWater };
 // Guests already scanned the table QR, so this tab calls a person instead of showing the code again.
-function CallStaff({ table, c, restaurant, call, now, staffAccess, onCall, onCancel, onBack }) {
+function CallStaff({ table, c, restaurant, call, now, staffAccess, onCall, onCancel, onBack, callReasons = ['help', 'pay', 'water'] }) {
   const [failedAction, setFailedAction] = useState(null);
+  const [saving, setSaving] = useState(false);
   useEffect(() => setFailedAction(null), [table, call?.at, call?.reason]);
-  function saveCall(action) {
+  async function saveCall(action) {
+    if (saving) return;
+    setSaving(true);
     try {
-      const saved = action === 'cancel' ? onCancel() : onCall(action);
+      const saved = await (action === 'cancel' ? onCancel() : onCall(action));
       if (saved === false) throw new Error('The request was not saved');
       setFailedAction(null);
     } catch {
       setFailedAction(action);
-    }
+    } finally { setSaving(false); }
   }
   const minutes = call ? Math.max(0, Math.floor((now - call.at) / 60000)) : 0;
   const CallIcon = call ? callIcons[call.reason] : null;
-  return <section className="dining-call-page">
-    {call ? <div className="dining-call-sent" role="status"><span className="dining-call-pulse"><CallIcon size={30}/></span><h2>{c('callSent')}</h2><p>{c(`reason_${call.reason}`)} · {minutes === 0 ? c('justNow') : c('minutesAgo', { count: minutes })}</p><button className="dining-secondary" onClick={() => saveCall('cancel')}>{c('callCancel')}</button></div>
-      : <div className="dining-call-card"><h2>{c('callTitle')}</h2><p>{restaurant} · {c('table')} {String(table).padStart(2, '0')}</p><div className="dining-call-options">{['help', 'pay', 'water'].map(reason => { const Icon = callIcons[reason]; return <button key={reason} onClick={() => saveCall(reason)}><span><Icon size={26}/></span><strong>{c(`reason_${reason}`)}</strong><ArrowRight size={20}/></button>; })}</div><p className="dining-call-hint">{c('callHint')}</p></div>}
-    {failedAction && <div className="dining-call-error"><p role="alert">{c('callSaveFailed')}</p><button className="dining-secondary" onClick={() => saveCall(failedAction)}>{c('retry')}</button></div>}
-    <div className="dining-demo-info"><span>{c('demo')}</span><p>{c('demoHint')}</p>{staffAccess && <button onClick={onBack}><ArrowLeft size={17}/>{c('staff')}</button>}</div>
+  return <section className="dining-call-page" aria-busy={saving}>
+    {call ? <div className="dining-call-sent" role="status"><span className="dining-call-pulse"><CallIcon size={30}/></span><h2>{c('callSent')}</h2><p>{c(`reason_${call.reason}`)} · {minutes === 0 ? c('justNow') : c('minutesAgo', { count: minutes })}</p><button className="dining-secondary" disabled={saving} onClick={() => saveCall('cancel')}>{c('callCancel')}</button></div>
+      : <div className="dining-call-card"><h2>{c('callTitle')}</h2><p>{restaurant} · {c('table')} {String(table).padStart(2, '0')}</p><div className="dining-call-options">{callReasons.map(reason => { const Icon = callIcons[reason]; return <button key={reason} disabled={saving} onClick={() => saveCall(reason)}><span><Icon size={26}/></span><strong>{c(`reason_${reason}`)}</strong><ArrowRight size={20}/></button>; })}</div><p className="dining-call-hint">{c('callHint')}</p></div>}
+    {failedAction && <div className="dining-call-error"><p role="alert">{c('callSaveFailed')}</p><button className="dining-secondary" disabled={saving} onClick={() => saveCall(failedAction)}>{c('retry')}</button></div>}
+    {staffAccess && <div className="dining-staff-utility"><button onClick={onBack}><ArrowLeft size={17}/>{c('staff')}</button></div>}
   </section>;
 }
 
-export default function Customer({ menu, table, draft, onUpdateDraft, staffAccess, shopName, methods = ['transfer', 'cash'], call, onCall, onCancelCall, onSubmit, tableOrders, onBack, initialLanguage = 'lo' }) {
-  const [language, setLanguage] = useState(initialLanguage);
+export default function Customer({ menu, table, draft, onUpdateDraft, staffAccess, shopName, methods = ['transfer', 'cash'], callReasons, call, onCall, onCancelCall, onSubmit, tableOrders, onBack, initialLanguage = 'lo', onLanguageChange, ordersStatus, onRetryOrders, onValidateReview, onClearPaymentIssue }) {
+  const [localLanguage, setLocalLanguage] = useState(initialLanguage);
+  const language = onLanguageChange ? initialLanguage : localLanguage;
+  const setLanguage = onLanguageChange || setLocalLanguage;
   const c = (key, values) => copy(language, key, values);
   const restaurant = shopName || c('restaurant');
-  const [tab, setTab] = useState(currentTab);
+  const canCall = typeof onCall === 'function' && typeof onCancelCall === 'function';
+  const [tab, setTab] = useState(() => currentTab(canCall));
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [layout, setLayout] = useState('grid');
   const cart = draft.cart;
+  const retrying = Boolean(draft.pending);
+  const paymentIssue = draft.paymentIssue;
   const [product, setProduct] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   // The owner may switch a method off after it was chosen for this basket.
   const method = methods.includes(draft.method) ? draft.method : methods[0];
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [cartMessage, setCartMessage] = useState('');
   const [review, setReview] = useState(null);
   const [reviewError, setReviewError] = useState('');
   const [now, setNow] = useState(Date.now());
   const lock = useRef(false);
+  const checking = useRef(false);
   const menuScroll = useRef(0);
   const appRef = useRef();
   const footerRef = useRef();
@@ -225,19 +260,24 @@ export default function Customer({ menu, table, draft, onUpdateDraft, staffAcces
   const translatedMenu = menu.map(customerMenuItem);
   const shown = filterCustomerMenu(translatedMenu, category, query);
   const availableIds = new Set(menu.filter(item => item.available).map(item => item.id));
-  const hasSoldOut = cart.some(item => !availableIds.has(item.id));
+  const hasSoldOut = !retrying && cart.some(item => !availableIds.has(item.id));
   const reviewKey = checkoutReviewKey(table, cart, method);
 
   useEffect(() => {
-    if (!review) return;
+    if (!review || busy) return;
     if (tab !== 'cart') { setReview(null); setReviewError(''); return; }
-    if (review.key !== reviewKey || hasSoldOut) {
+    if (review.requestId && review.requestId === draft.receipt?.requestId) {
+      setReview(null); setReviewError('');
+      navigate('orders');
+      return;
+    }
+    if (!onValidateReview && (review.key !== reviewKey || hasSoldOut)) {
       setReview(null); setReviewError('');
       setNotice({ text: c(hasSoldOut ? 'soldOutInCart' : 'cartChanged'), error: true });
     }
-  }, [review, reviewKey, hasSoldOut, tab]);
+  }, [review, reviewKey, hasSoldOut, tab, busy, onValidateReview, draft.receipt?.requestId]);
 
-  useEffect(() => { const update = () => { setTab(currentTab()); }; addEventListener('hashchange', update); return () => removeEventListener('hashchange', update); }, []);
+  useEffect(() => { const update = () => { setTab(currentTab(canCall)); }; addEventListener('hashchange', update); return () => removeEventListener('hashchange', update); }, [canCall]);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
   useEffect(() => { const meta = document.querySelector('meta[name="theme-color"]'); const original = meta?.content; if (meta) meta.content = '#ffffff'; return () => { document.documentElement.lang = originalLanguage.current; if (meta) meta.content = original; }; }, []);
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(id); }, []);
@@ -261,9 +301,11 @@ export default function Customer({ menu, table, draft, onUpdateDraft, staffAcces
     try {
       onUpdateDraft(transform);
       setNotice(null);
+      setCartMessage('');
       return true;
-    } catch {
-      setNotice({ text: c('saveFailed'), error: true });
+    } catch (error) {
+      const key = { 'checkout-pending': 'retryCheckoutHint', 'order-limit': 'orderLimit', 'payment-recovery': 'paymentRecoveryHint' }[error.code] || 'saveFailed';
+      setNotice({ text: c(key), error: true });
       return false;
     }
   }
@@ -297,32 +339,57 @@ export default function Customer({ menu, table, draft, onUpdateDraft, staffAcces
     if (!setCart(old => old.filter(row => row.key !== item.key))) return;
     setNotice({ text: c('removed'), undo: () => { if (setCart(old => addCartItem(old, item))) setNotice(null); } });
   }
-  function reviewOrder() {
-    if (lock.current || !cart.length || hasSoldOut) return;
-    setNotice(null); setReviewError('');
-    setReview({ key: reviewKey, table, items: cart.map(item => ({ ...item })), method });
+  async function reviewOrder() {
+    if (lock.current || checking.current || !cart.length || hasSoldOut || paymentIssue) return;
+    setNotice(null); setReviewError(''); setCartMessage('');
+    const quote = { key: reviewKey, table, items: cart.map(item => ({ ...item })), method, requestId: draft.requestId };
+    if (!onValidateReview || retrying) { setReview(quote); return; }
+    checking.current = true;
+    setValidating(true);
+    try {
+      const requestId = await onValidateReview(quote);
+      setReview({ ...quote, requestId });
+    } catch (error) {
+      const key = { 'quote-updated': 'quoteUpdated', 'sold-out': 'soldOutInCart', 'dish-changed': 'dishChanged', 'cart-changed': 'quoteUpdated', 'invalid-table': 'invalidTableHint' }[error.code] || 'quoteCheckFailed';
+      setCartMessage(key);
+    } finally {
+      checking.current = false;
+      setValidating(false);
+    }
   }
-  function sendOrder() {
-    if (lock.current || !review || !cart.length || hasSoldOut) return;
-    if (review.key !== reviewKey) {
+  async function sendPaymentRequest() {
+    if (lock.current || !review || paymentIssue) return;
+    if (!onValidateReview && (!cart.length || hasSoldOut || review.key !== reviewKey)) {
       setReview(null); setNotice({ text: c('cartChanged'), error: true }); return;
     }
     lock.current = true;
     setBusy(true);
     setReviewError('');
     try {
-      const orderId = onSubmit(table, 'qr', review.key);
-      if (!orderId) throw new Error('Order not accepted');
+      const orderId = await onSubmit(table, 'qr', review.key, review);
+      if (!orderId) throw new Error('Payment review request was not saved');
       setReview(null);
-      setNotice({ text: c('orderSent') });
+      setNotice({ text: c('orderPlaced') });
       navigate('orders');
+      setBusy(false);
     } catch (error) {
       lock.current = false;
       setBusy(false);
-      if (error.code === 'cart-changed') {
+      if (error.code === 'payment-recovery') {
+        setReview(null);
+        navigate('cart');
+      } else if (error.code === 'cart-changed') {
         setReview(null); setNotice({ text: c('cartChanged'), error: true });
-      } else setReviewError(c(error.code === 'sold-out' ? 'soldOutInCart' : 'orderFailed'));
+      } else {
+        const key = { 'sold-out': 'soldOutInCart', 'rate-limited': 'paymentRateLimited' }[error.code] || 'orderSendFailed';
+        setReviewError(c(key));
+      }
     }
+  }
+
+  function clearPaymentIssue() {
+    try { onClearPaymentIssue(); }
+    catch { setNotice({ text: c('saveFailed'), error: true }); }
   }
 
   if (!table) return <div className="dining-app dining-invalid-table" lang={language}>
@@ -333,21 +400,21 @@ export default function Customer({ menu, table, draft, onUpdateDraft, staffAcces
   return <div ref={appRef} className={`dining-app dining-tab-${tab} ${count > 0 ? 'dining-has-basket' : ''}`} lang={language}>
     <a className="dining-skip" href="#dining-main" onClick={event => { event.preventDefault(); document.getElementById('dining-main')?.focus(); }}>{c('menu')}</a>
     {tab === 'menu' ? <><header className="dining-header"><div className="dining-header-inner"><div className="dining-restaurant-row"><span className="dining-restaurant-mark" aria-hidden="true"><Soup size={31} strokeWidth={1.5}/></span><div className="dining-restaurant-name"><h1>{restaurant}</h1><p><MapPin size={16}/><span>{tableCode(table)}</span>{staffAccess && <button onClick={onBack}><ArrowLeft size={13}/>{c('staff')}</button>}</p></div><LanguageMenu language={language} setLanguage={setLanguage} c={c}/></div><label className="dining-search"><Search size={22}/><input value={query} onChange={event => setQuery(event.target.value)} placeholder={c('search')} aria-label={c('search')} type="search" enterKeyHint="search"/>{query && <button aria-label={c('clearSearch')} onClick={() => setQuery('')}><X size={19}/></button>}</label></div></header>
-      <div className="dining-category-bar"><div className="dining-category-inner"><nav className="dining-categories" aria-label={c('menu')}>{['all', ...['khao', 'pho', 'drinks', 'other'].filter(id => menu.some(item => customerCategory(item) === id))].map(id => <button key={id} aria-pressed={category === id} className={category === id ? 'is-active' : ''} onClick={() => setCategory(id)}>{c(id)}</button>)}</nav><div className="dining-layout" role="group" aria-label={c('grid')}><button className={layout === 'grid' ? 'is-active' : ''} aria-label={c('grid')} aria-pressed={layout === 'grid'} onClick={() => setLayout('grid')}><LayoutGrid size={21}/></button><button className={layout === 'list' ? 'is-active' : ''} aria-label={c('list')} aria-pressed={layout === 'list'} onClick={() => setLayout('list')}><List size={23}/></button></div></div></div></> : <header className="dining-page-banner"><div><div><h1>{tab === 'orders' ? c('orders') : tab === 'cart' ? c('cart') : c('callTitle')}</h1>{tab === 'orders' && <span className="dining-banner-count">({tableOrders.length}) · {c('items', { count: tableOrders.reduce((n, order) => n + order.items.reduce((sum, item) => sum + item.quantity, 0), 0) })}</span>}{tab === 'cart' && <span className="dining-banner-count">({c('items', { count })})</span>}</div><p>{c('table')} {String(table).padStart(2, '0')}</p></div>{tab === 'cart' ? <button className="dining-banner-close" aria-label={c('close')} onClick={() => navigate('menu')}><X size={26}/></button> : <LanguageMenu language={language} setLanguage={setLanguage} c={c}/>}</header>}
+      <div className="dining-category-bar"><div className="dining-category-inner"><nav className="dining-categories" aria-label={c('menu')}>{['all', ...['khao', 'pho', 'drinks', 'other'].filter(id => menu.some(item => customerCategory(item) === id))].map(id => <button key={id} aria-pressed={category === id} className={category === id ? 'is-active' : ''} onClick={() => setCategory(id)}>{c(id)}</button>)}</nav></div></div></> : <header className="dining-page-banner"><div><div><h1>{tab === 'orders' ? c('orders') : tab === 'cart' ? c('cart') : c('callTitle')}</h1>{tab === 'orders' && <span className="dining-banner-count">({tableOrders.length}) · {c('items', { count: tableOrders.reduce((n, order) => n + order.items.reduce((sum, item) => sum + item.quantity, 0), 0) })}</span>}{tab === 'cart' && <span className="dining-banner-count">({c('items', { count })})</span>}</div><p>{c('table')} {String(table).padStart(2, '0')}</p></div>{tab === 'cart' ? <button className="dining-banner-close" aria-label={c('close')} onClick={() => navigate('menu')}><X size={26}/></button> : <LanguageMenu language={language} setLanguage={setLanguage} c={c}/>}</header>}
 
     <main id="dining-main" tabIndex={-1} className="dining-main">
-      {tab === 'menu' && <section className="dining-menu-content"><div className="dining-section-title"><h2>{c(category === 'all' ? 'ourMenu' : category)}</h2><span>{c('items', { count: shown.length })}</span></div><div className={`dining-food-grid ${layout === 'list' ? 'is-list' : ''}`}>{shown.map(item => <article className={`dining-food ${!item.available ? 'is-unavailable' : ''}`} key={item.id}><button className="dining-food-target" disabled={!item.available} aria-label={`${c(item.available ? 'add' : 'soldOut')} ${customerItemName(item, language)}`} onClick={() => setProduct(item)}><div className="dining-food-photo"><img src={item.image} alt={customerItemName(item, language)} width="600" height="450" loading="lazy"/>{item.popular && item.available && <span className="dining-popular">{c('popular')}</span>}{!item.available ? <span className="dining-sold-out">{c('soldOut')}</span> : <span className="dining-food-plus"><Plus size={25} strokeWidth={2}/></span>}</div><div className="dining-food-copy"><h3>{customerItemName(item, language)}</h3>{layout === 'list' && ['lo', 'th'].includes(language) && <p>{item[language === 'lo' ? 'detailLo' : 'detailTh']}</p>}<strong>{money(item.price)} ₭</strong></div></button></article>)}</div>{!shown.length && <Empty icon={Search} title={c('noResults')} description={c('trySearch')}><button className="dining-secondary" onClick={() => { setQuery(''); setCategory('all'); }}>{c('all')}</button></Empty>}<footer className="dining-menu-notes"><p>{c('allergy')}</p><a href="/credits.txt" target="_blank" rel="noreferrer">{c('photos')} · Spencer / Wikimedia · Unsplash</a></footer></section>}
+      {tab === 'menu' && <section className="dining-menu-content"><div className="dining-section-title"><h2>{c(category === 'all' ? 'ourMenu' : category)}</h2><div className="dining-section-controls"><span>{c('items', { count: shown.length })}</span><div className="dining-layout" role="group" aria-label={c('menuLayout')}><button className={layout === 'grid' ? 'is-active' : ''} aria-label={c('grid')} aria-pressed={layout === 'grid'} onClick={() => setLayout('grid')}><LayoutGrid size={21}/></button><button className={layout === 'list' ? 'is-active' : ''} aria-label={c('list')} aria-pressed={layout === 'list'} onClick={() => setLayout('list')}><List size={23}/></button></div></div></div><div className={`dining-food-grid ${layout === 'list' ? 'is-list' : ''}`}>{shown.map(item => <article className={`dining-food ${!item.available ? 'is-unavailable' : ''}`} key={item.id}><button className="dining-food-target" disabled={!item.available} aria-label={`${c(item.available ? 'add' : 'soldOut')} ${customerItemName(item, language)}`} onClick={() => setProduct(menu.find(dish => dish.id === item.id))}><div className="dining-food-photo"><img src={item.image} alt={customerItemName(item, language)} width="600" height="450" loading="lazy"/>{item.popular && item.available && <span className="dining-popular">{c('popular')}</span>}{!item.available ? <span className="dining-sold-out">{c('soldOut')}</span> : <span className="dining-food-plus"><Plus size={25} strokeWidth={2}/></span>}</div><div className="dining-food-copy"><h3>{customerItemName(item, language)}</h3>{layout === 'list' && ['lo', 'th'].includes(language) && <p>{item[language === 'lo' ? 'detailLo' : 'detailTh']}</p>}<strong>{money(item.price)} ₭</strong></div></button></article>)}</div>{!shown.length && <Empty icon={Search} title={c('noResults')} description={c('trySearch')}><button className="dining-secondary" onClick={() => { setQuery(''); setCategory('all'); }}>{c('all')}</button></Empty>}<footer className="dining-menu-notes"><p>{c('allergy')}</p>{menu.some(item => ['/images/khao-piak.jpg','/images/pho.jpg','/images/coffee.jpg','/images/drink.jpg','/images/noodles.jpg','/images/soup.jpg'].includes(item.image)) && <a href="/credits.txt" target="_blank" rel="noreferrer">{c('photos')}</a>}</footer></section>}
 
-      {tab === 'cart' && <><section className="dining-cart-content">{cart.length ? <><div className="dining-cart-list">{cart.map(item => <CartItem key={item.key} item={item} language={language} c={c} soldOut={!availableIds.has(item.id)} onQuantity={quantity => changeQuantity(item.key, quantity)} onEdit={() => edit(item)} onRemove={() => remove(item)}/>)}</div><fieldset className="dining-payment-choice"><legend>{c('payment')}</legend><div>{[['transfer', CreditCard], ['cash', Banknote]].filter(([value]) => methods.includes(value)).map(([value, Icon]) => <label key={value} className={method === value ? 'is-selected' : ''}><input type="radio" name="payment-method" checked={method === value} onChange={() => setMethod(value)}/><Icon size={20}/><span>{c(value)}</span>{method === value && <Check size={17}/>}</label>)}</div><p>{c('payAtCashier')}</p></fieldset></> : <Empty icon={ShoppingBag} title={c('emptyCart')} description={c('pickFood')}><button className="dining-primary" onClick={() => navigate('menu')}><Plus size={21}/>{c('orderMore')}</button></Empty>}</section>{cart.length > 0 && <div ref={footerRef} className="dining-cart-checkout"><div className="dining-cart-checkout-inner">{hasSoldOut && <p className="dining-cart-warning" role="alert">{c('soldOutInCart')}</p>}<div className="dining-cart-total"><div><span>{c('total')}</span><small>{c('items', { count })}</small></div><strong>{money(total)} ₭</strong></div><div className="dining-checkout-actions"><button className="dining-secondary" onClick={() => navigate('menu')}><Plus size={21}/>{c('orderMore')}</button><button className="dining-primary" onClick={reviewOrder} aria-haspopup="dialog" disabled={busy || hasSoldOut}>{c(busy ? 'sending' : 'orderNow')}<ArrowRight size={23}/></button></div><p>{c('demoHint')}</p></div></div>}</>}
+      {tab === 'cart' && <><section className="dining-cart-content">{paymentIssue && <PaymentRecovery amount={paymentIssue.amount} c={c} onClose={clearPaymentIssue}/>}{cart.length ? <><div className="dining-cart-list">{cart.map(item => <CartItem key={item.key} item={item} language={language} c={c} soldOut={!availableIds.has(item.id)} locked={retrying || Boolean(paymentIssue)} onQuantity={quantity => changeQuantity(item.key, quantity)} onEdit={() => edit(item)} onRemove={() => remove(item)}/>)}</div><fieldset className="dining-payment-choice" disabled={retrying || Boolean(paymentIssue)}><legend>{c('payment')}</legend><div>{[['transfer', CreditCard], ['cash', Banknote]].filter(([value]) => methods.includes(value)).map(([value, Icon]) => <label key={value} className={method === value ? 'is-selected' : ''}><input type="radio" name="payment-method" checked={method === value} onChange={() => setMethod(value)}/><Icon size={20}/><span>{c(value === 'transfer' ? 'transferAtCounter' : value)}</span>{method === value && <Check size={17}/>}</label>)}</div><p>{c(paymentIssue ? 'paymentRecoveryHint' : retrying ? 'retryCheckoutHint' : 'payBeforeSending')}</p></fieldset></> : <Empty icon={ShoppingBag} title={c('emptyCart')} description={c('pickFood')}><button className="dining-primary" onClick={() => navigate('menu')}><Plus size={21}/>{c('orderMore')}</button></Empty>}</section>{cart.length > 0 && !paymentIssue && <div ref={footerRef} className="dining-cart-checkout"><div className="dining-cart-checkout-inner">{(hasSoldOut || cartMessage) && <p className="dining-cart-warning" role="alert">{c(hasSoldOut ? 'soldOutInCart' : cartMessage)}</p>}<div className="dining-cart-total"><div><span>{c('total')}</span><small>{c('items', { count })}</small></div><strong>{money(total)} ₭</strong></div><div className="dining-checkout-actions"><button className="dining-secondary" onClick={() => navigate('menu')}><Plus size={21}/>{c('orderMore')}</button><button className="dining-primary" onClick={reviewOrder} aria-haspopup="dialog" disabled={busy || validating || hasSoldOut}>{c(busy ? 'sending' : validating ? 'checkingQuote' : retrying ? 'retryCheckout' : 'reviewAndPay')}<ArrowRight size={23}/></button></div></div></div>}</>}
 
-      {tab === 'orders' && <OrderHistory orders={tableOrders} language={language} c={c} now={now} onMenu={() => navigate('menu')} footerRef={footerRef} recentOrderId={draft.lastOrderId}/>}
-      {tab === 'call' && <CallStaff table={table} c={c} restaurant={restaurant} call={call} now={now} staffAccess={staffAccess} onCall={onCall} onCancel={onCancelCall} onBack={onBack}/>}
+      {tab === 'orders' && <OrderHistory orders={tableOrders} language={language} c={c} now={now} onMenu={() => navigate('menu')} footerRef={footerRef} recentOrderId={draft.lastOrderId} recentOrderNumber={draft.receipt?.orderNumber} ordersStatus={ordersStatus} onRetryOrders={onRetryOrders}/>}
+      {canCall && tab === 'call' && <CallStaff callReasons={callReasons} table={table} c={c} restaurant={restaurant} call={call} now={now} staffAccess={staffAccess} onCall={onCall} onCancel={onCancelCall} onBack={onBack}/>}
     </main>
 
     {tab === 'menu' && count > 0 && <div ref={footerRef} className="dining-basket-dock"><button onClick={() => navigate('cart')}><span className="dining-basket-count">{count}</span><ShoppingBag size={20}/><span>{c('viewCart')}</span><strong>{money(total)} ₭</strong><ArrowRight size={21}/></button></div>}
-    {tab !== 'cart' && <nav className="dining-bottom-nav" aria-label={c('menu')}>{[['menu', BookOpen], ['orders', ClipboardList], ['call', BellRing]].map(([id, Icon]) => <button key={id} className={tab === id ? 'is-active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={24} strokeWidth={tab === id ? 2.1 : 1.7}/><span>{c(id)}</span>{id === 'orders' && tableOrders.length > 0 && <i>{tableOrders.length}</i>}</button>)}</nav>}
+    {tab !== 'cart' && <nav className="dining-bottom-nav" aria-label={c('menu')}>{[['menu', BookOpen], ['orders', ClipboardList], ['call', BellRing]].filter(([id]) => id !== 'call' || canCall).map(([id, Icon]) => <button key={id} className={tab === id ? 'is-active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => navigate(id)}><Icon size={24} strokeWidth={tab === id ? 2.1 : 1.7}/><span>{c(id)}</span>{id === 'orders' && tableOrders.length > 0 && <i>{tableOrders.length}</i>}</button>)}</nav>}
     {product && <FoodOptions item={product} error={notice?.error ? notice.text : null} initialItem={editingItem} language={language} c={c} onClose={() => { setProduct(null); setEditingItem(null); }} onAdd={add}/>}
-    {review && <OrderConfirmation review={review} language={language} c={c} busy={busy} error={reviewError} onClose={() => { if (!lock.current) { setReview(null); setReviewError(''); } }} onConfirm={sendOrder}/>}
+    {review && <OrderConfirmation review={review} language={language} c={c} busy={busy} error={reviewError} retrying={retrying && !busy} onClose={() => { if (!lock.current) { setReview(null); setReviewError(''); } }} onConfirm={sendPaymentRequest}/>}
     {notice && <div className={`dining-notice ${tab === 'cart' ? 'above-checkout' : ''} ${notice.error ? 'is-error' : ''}`} role={notice.error ? 'alert' : 'status'}>{notice.error ? <AlertCircle size={19}/> : <CheckCircle2 size={19}/>} <span>{notice.text}</span>{notice.undo && <button onClick={notice.undo}>{c('undo')}</button>}<button className="dining-notice-close" aria-label={c('close')} onClick={() => setNotice(null)}><X size={17}/></button></div>}
   </div>;
 }

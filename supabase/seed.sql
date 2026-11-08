@@ -1,0 +1,1 @@
+-- No automatic menu, tables, staff, orders or sales. Shops enter their own data.

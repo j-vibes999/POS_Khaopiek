@@ -6,7 +6,7 @@ import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
 import { copy } from '../src/customer-copy.js';
 
-test('the final customer review shows the reviewed table, quoted items, kitchen instructions and payment choice', async () => {
+test('the final customer review shows the order, counter payment instructions and the confirmation action', async () => {
   const server = await createServer({
     root: fileURLToPath(new URL('..', import.meta.url)), configFile: false, appType: 'custom',
     optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true, watch: null, ws: false },
@@ -29,6 +29,15 @@ test('the final customer review shows the reviewed table, quoted items, kitchen 
     assert.match(html, /Cash/);
     assert.match(html, /role="alert"[^>]*>Storage unavailable/);
     assert.match(html, /Back to basket/);
+    assert.match(html, /pay in cash before confirming/);
     assert.match(html, /Confirm order/);
+
+    const transferHtml = renderToStaticMarkup(React.createElement(OrderConfirmation, { review: { ...review, method: 'transfer' }, language: 'en', c: (key, values) => copy('en', key), busy: false }));
+    assert.match(transferHtml, /Ask for transfer details at the counter/);
+
+    const retryHtml = renderToStaticMarkup(React.createElement(OrderConfirmation, { review, retrying: true, language: 'en', c: (key, values) => copy('en', key, values), busy: false }));
+    assert.match(retryHtml, /Retry order/);
+    assert.match(retryHtml, /retry without paying again/);
+    assert.doesNotMatch(retryHtml, /pay in cash before confirming/);
   } finally { await server.close(); }
 });

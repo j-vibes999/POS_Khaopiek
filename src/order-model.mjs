@@ -1,10 +1,20 @@
 export const orderTotal = (items) => items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+export const isActiveOrder = order => !['completed', 'rejected'].includes(order.status);
+export const needsKitchenHandoff = order => order.paid && order.status === 'queued' && order.kitchenPending === true;
+export const menuQuoteFields = ['category', 'lo', 'th', 'en', 'zh', 'ko', 'ja', 'detailLo', 'detailTh'];
+export const menuQuoteIdentity = item => JSON.stringify(menuQuoteFields.map(field => item[field] ?? ''));
 // Existing basket choices keep the base price quoted when that line was added.
 export const quotedItemPrice = (item, size) => item.price - (item.size === 'large' ? 10000 : 0) + (size === 'large' ? 10000 : 0);
 export function nextOrderStatus(order, action) {
   if (action === 'pay' && order.status === 'pending') return 'queued';
-  if (!order.paid) return order.status;
-  const transitions = { queued: { start: 'cooking' }, cooking: { ready: 'ready' }, ready: { serve: 'served' }, served: { close: 'completed' } };
+  if (action === 'reject' && !order.paid && order.status === 'pending') return 'rejected';
+  if (!order.paid || needsKitchenHandoff(order)) return order.status;
+  const transitions = {
+    queued: { start: 'cooking', serve: 'served' },
+    cooking: { ready: 'ready', serve: 'served' },
+    ready: { serve: 'served' },
+    served: { close: 'completed' },
+  };
   return transitions[order.status]?.[action] ?? order.status;
 }
 export function addCartItem(cart, item) {

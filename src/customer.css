@@ -59,7 +59,8 @@
 .dining-has-basket .dining-menu-content { padding-bottom: 100px; }
 .dining-section-title { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 21px; }
 .dining-section-title h2 { font-size: 19px; font-weight: 600; color: #656d79; }
-.dining-section-title > span { font-size: 13px; white-space: nowrap; color: var(--dining-muted); }
+.dining-section-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
+.dining-section-controls > span { font-size: 13px; white-space: nowrap; color: var(--dining-muted); }
 .dining-food-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 22px; row-gap: 30px; }
 .dining-food { min-width: 0; }
 .dining-food-target { display: block; width: 100%; padding: 0; text-align: left; border-radius: 15px; }
@@ -111,6 +112,8 @@
 .dining-order-heading > strong { font-size: 21px; font-weight: 700; line-height: 1.4; }
 .dining-status { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 9px; border-radius: 20px; background: #f4f0ff; color: #7952a8; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .dining-status.pending { background: #fff7c4; color: #8b6200; }
+.dining-status.kitchenHandoff { background: #fff1d8; color: #825016; }
+.dining-status.rejected { background: #fff0ed; color: #913b32; }
 .dining-status.cooking { background: #eaf0fe; color: #4664a1; }
 .dining-status.ready { background: #e6f3e7; color: #366c40; }
 .dining-order-amount { font-size: 21px; font-weight: 700; color: var(--dining-price); font-variant-numeric: tabular-nums; }
@@ -123,6 +126,7 @@
 .dining-order-line p { font-size: 12px; color: #6b7280; margin-top: 4px; line-height: 1.7; overflow-wrap: anywhere; }
 .dining-order-line > strong { font-size: 16px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dining-order-paid { padding: 0 20px 17px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: #47744a; }
+.dining-order-rejected { padding: 0 20px 17px; font-size: 14px; color: #913b32; }
 .dining-order-summary { position: fixed; bottom: calc(var(--dining-nav-height) + env(safe-area-inset-bottom)); left: 0; right: 0; padding: 17px max(24px, calc((100vw - 720px) / 2)) 19px; border-top: 1px solid #e7e9ed; background: #fff; z-index: 33; box-shadow: 0 -6px 25px #27313f03; }
 .dining-order-summary > div { display: flex; align-items: center; justify-content: space-between; gap: 15px; font-size: 15px; }
 .dining-order-summary > div > strong { font-variant-numeric: tabular-nums; }
@@ -131,6 +135,10 @@
 .dining-amount-due > strong:last-child { font-size: 26px; font-weight: 700; color: var(--dining-price); }
 .dining-cart-content { max-width: 800px; margin: auto; padding: 20px 20px calc(var(--dining-footer-height, 220px) + 28px); }
 .dining-tab-cart { background: #fff; padding-bottom: 0; }
+.dining-payment-recovery { margin-bottom: 18px; padding: 18px; background: #fff2ef; color: #81352b; border-radius: 12px; }
+.dining-payment-recovery h2 { margin-bottom: 5px; font-size: 19px; }
+.dining-payment-recovery p { margin-block: 5px 14px; font-size: 15px; }
+.dining-payment-recovery > button { background: white; }
 .dining-cart-list { display: flex; flex-direction: column; gap: 16px; }
 .dining-cart-item { padding: 20px; display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: start; gap: 16px; border-radius: 16px; box-shadow: 0 6px 28px #27313f08; background: #fff; }
 .dining-cart-item > img { height: 84px; width: 84px; border-radius: 11px; flex-shrink: 0; margin-top: 2px; }
@@ -191,10 +199,8 @@
 .dining-option-bottom { flex-shrink: 0; display: flex; align-items: center; gap: 19px; padding: 18px 25px; background: #fff; border-top: 1px solid #f0f1f3; }
 .dining-option-bottom > .dining-primary { flex: 1; min-width: 0; font-size: 16px; }
 .dining-option-bottom .dining-quantity { gap: 7px; }
-.dining-demo-info { border-top: 1px solid #e5e7eb; margin-top: 25px; padding-top: 20px; font-size: 13px; color: #6b7280; }
-.dining-demo-info > span { font-weight: 600; color: #616a78; }
-.dining-demo-info > p { font-size: 12px; margin-top: 6px; line-height: 1.8; }
-.dining-demo-info > button { display: inline-flex; align-items: center; gap: 6px; color: #9f480d; min-height: 46px; margin-top: 13px; }
+.dining-staff-utility { border-top: 1px solid #e5e7eb; margin-top: 25px; padding-top: 20px; font-size: 13px; color: #6b7280; }
+.dining-staff-utility > button { display: inline-flex; align-items: center; gap: 6px; color: #9f480d; min-height: 46px; margin-top: 13px; }
 .dining-empty { padding: 65px 15px; text-align: center; display: flex; align-items: center; flex-direction: column; gap: 12px; }
 .dining-empty > span { display: grid; place-items: center; height: 78px; width: 78px; color: #b9835e; background: #fff2e5; border-radius: 50%; margin-bottom: 6px; }
 .dining-empty h2 { font-size: 22px; font-weight: 600; }
@@ -242,7 +248,7 @@
   .dining-menu-content { padding: 21px 16px 27px; }
   .dining-section-title { margin-bottom: 18px; gap: 12px; }
   .dining-section-title h2 { font-size: 17px; }
-  .dining-section-title > span { font-size: 12px; }
+  .dining-section-controls > span { font-size: 12px; }
   .dining-food-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 15px; row-gap: 24px; }
   .dining-food-photo { border-radius: 15px; aspect-ratio: 1.22; }
   .dining-food-plus { bottom: 8px; right: 8px; width: 41px; height: 41px; }
@@ -373,6 +379,7 @@
 .dining-order-guidance p { font-size: 14px; line-height: 1.8; margin-top: 5px; }
 .dining-order-guidance.ready, .dining-order-guidance.served { background: #eaf3e8; color: #35613c; }
 .dining-order-guidance.cooking { background: #ecf1fa; color: #3e5a88; }
+.dining-order-guidance.rejected { background: #fff0ed; color: #913b32; }
 .dining-tab-orders .dining-notice { bottom: calc(var(--dining-nav-height) + env(safe-area-inset-bottom) + var(--dining-footer-height, 160px) + 12px); }
 .dining-tab-menu.dining-has-basket .dining-notice { bottom: calc(var(--dining-nav-height) + env(safe-area-inset-bottom) + var(--dining-footer-height, 60px) + 26px); }
 .dining-notice > button, .dining-notice .dining-notice-close { min-width: 44px; min-height: 44px; }
@@ -412,13 +419,13 @@
 .dining-confirmation-items h3 { font-size: 17px; font-weight: 650; line-height: 1.6; overflow-wrap: anywhere; }
 .dining-confirmation-items p { margin-top: 4px; color: #596473; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
 .dining-confirmation-items > li > strong { font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.dining-confirmation-method { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; padding: 18px 0; font-size: 15px; }
+.dining-confirmation-method { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; font-size: 15px; margin-bottom: 10px; }
 .dining-confirmation-method > span { color: #596473; }
-.dining-confirmation-method p { flex-basis: 100%; color: #596473; font-size: 14px; line-height: 1.7; }
+.dining-confirmation-payment-hint { margin-bottom: 16px; padding: 9px 12px; border-radius: 10px; background: #fff5e9; color: #854111; font-size: 14px; line-height: 1.65; }
 .dining-confirmation-footer { flex-shrink: 0; padding: 18px 24px calc(20px + env(safe-area-inset-bottom)); border-top: 1px solid #eceef0; background: #fff; }
-.dining-confirmation-total { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 18px; font-size: 16px; }
+.dining-confirmation-total { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 8px; font-size: 16px; }
 .dining-confirmation-total strong { font-size: 30px; font-weight: 750; color: #a94000; font-variant-numeric: tabular-nums; }
-.dining-confirmation-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.dining-confirmation-actions { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 12px; }
 .dining-confirmation-actions > button { min-width: 0; min-height: 56px; padding-inline: 14px; }
 .dining-confirmation-error { margin-bottom: 14px; color: #a9362c; font-size: 15px; line-height: 1.7; }
 @media (max-height: 500px) {

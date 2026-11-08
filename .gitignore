@@ -3,4 +3,11 @@ dist/
 .DS_Store
 .impeccable/cache/
 .impeccable/mocks/
+.impeccable/critique/
+reviews/
 artifacts/
+.env
+.env.*
+!.env.example
+
+.local/

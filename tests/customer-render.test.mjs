@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
 
 test('an invalid table QR renders recovery guidance instead of crashing', async () => {
-  const globals = Object.fromEntries(['document', 'location'].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  const globals = Object.fromEntries(['document', 'location', 'localStorage', 'window'].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
   const server = await createServer({
     root: fileURLToPath(new URL('..', import.meta.url)),
     configFile: false,
@@ -27,6 +27,19 @@ test('an invalid table QR renders recovery guidance instead of crashing', async 
     });
     assert.match(html, /Table not found/);
     assert.match(html, /Scan the QR code on your table again or ask our staff/);
+
+    const { default: LanCustomer } = await server.ssrLoadModule('/src/LanCustomer.jsx');
+    const noQr = renderToStaticMarkup(React.createElement(LanCustomer, { table: null, initialLanguage: 'en' }));
+    assert.match(noQr, /Scan your table QR code/);
+    const loading = renderToStaticMarkup(React.createElement(LanCustomer, { table: '3', initialLanguage: 'en' }));
+    assert.match(loading, /Loading the menu/);
+
+    const localStorage = { getItem: key => key === 'khao-piek:lan:draft:v1:3' ? JSON.stringify({ cart: [], paymentIssue: { amount: 35000 } }) : null };
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage } });
+    Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: localStorage });
+    const recovery = renderToStaticMarkup(React.createElement(LanCustomer, { table: '3', initialLanguage: 'en' }));
+    assert.match(recovery, /Original total 35,000 ₭/);
+    assert.match(recovery, /Show your original payment receipt/);
   } finally {
     await server.close();
     for (const [name, descriptor] of Object.entries(globals)) {

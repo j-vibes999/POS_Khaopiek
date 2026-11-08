@@ -3,17 +3,19 @@ import assert from 'node:assert/strict';
 import {
   activityLimit, addTable, canOpen, closeShift, currentShift, defaultStaff, defaultTables, logActivity, normalizeBackOffice,
   openShift, removeLastTable, roleViews, saveSettings, saveStaffMember, shiftTotals, updateTable,
-  answerCall, cashSuggestions, deleteMenuItem, kitchenTotals, menuImages, paidInRange, requestCall, saveMenuItem,
+  answerCall, cashSuggestions, deleteMenuItem, menuImages, paidInRange, requestCall, saveMenuItem,
 } from '../src/backoffice-model.mjs';
 import { applyOrderAction, customerCategory, undoOrderAction } from '../src/customer-model.mjs';
 import { initialMenu } from '../src/data.js';
 
 const owner = defaultStaff[0];
+const manager = defaultStaff[1];
 const cashier = defaultStaff[2];
 const order = (id, table, method, price, status = 'pending') => ({ id, table, method, status, paid: false, createdAt: 1, items: [{ id: 'pork', price, quantity: 1 }] });
 
-test('each role opens only its own screens, and everyone may preview the customer menu', () => {
-  assert.deepEqual(roleViews.kitchen, ['kitchen']);
+test('supported roles keep their own screens and the kitchen screen is unavailable', () => {
+  for (const role of Object.keys(roleViews)) assert.equal(canOpen(role, 'kitchen'), false);
+  assert.equal(canOpen('kitchen', 'tables'), false);
   assert.equal(canOpen('cashier', 'shift'), true);
   assert.equal(canOpen('cashier', 'staff'), false);
   assert.equal(canOpen('manager', 'settings'), false);
@@ -21,14 +23,44 @@ test('each role opens only its own screens, and everyone may preview the custome
   assert.equal(canOpen('kitchen', 'customer'), true);
 });
 
+test('the kitchen role is unavailable for new staff and demo sign-ins', () => {
+  assert.equal(defaultStaff.some(member => member.role === 'kitchen'), false);
+  assert.throws(() => saveStaffMember(defaultStaff, { name: 'Cook', role: 'kitchen', pin: '4444' }, 1000, owner.id), { code: 'role' });
+});
+
 test('staff need a name and a 4-digit PIN, and the shop always keeps an active owner', () => {
-  assert.throws(() => saveStaffMember(defaultStaff, { name: ' ', role: 'cashier', pin: '1234' }), { code: 'name' });
-  assert.throws(() => saveStaffMember(defaultStaff, { name: 'ນ້ອຍ', role: 'cashier', pin: '12a4' }), { code: 'pin' });
-  assert.throws(() => saveStaffMember(defaultStaff, { ...owner, active: false }), { code: 'last-owner' });
-  assert.throws(() => saveStaffMember(defaultStaff, { ...owner, role: 'cashier' }), { code: 'last-owner' });
-  const added = saveStaffMember(defaultStaff, { name: ' ນ້ອຍ ', role: 'cashier', pin: '5678' }, 1000);
+  assert.throws(() => saveStaffMember(defaultStaff, { name: ' ', role: 'cashier', pin: '1234' }, 1000, owner.id), { code: 'name' });
+  assert.throws(() => saveStaffMember(defaultStaff, { name: 'ນ້ອຍ', role: 'cashier', pin: '12a4' }, 1000, owner.id), { code: 'pin' });
+  assert.throws(() => saveStaffMember(defaultStaff, { ...owner, active: false }, 1000, owner.id), { code: 'last-owner' });
+  assert.throws(() => saveStaffMember(defaultStaff, { ...owner, role: 'cashier' }, 1000, owner.id), { code: 'last-owner' });
+  const added = saveStaffMember(defaultStaff, { name: ' ນ້ອຍ ', role: 'cashier', pin: '5678' }, 1000, owner.id);
   assert.equal(added.length, defaultStaff.length + 1);
   assert.deepEqual(added.at(-1), { id: 'staff-rs', name: 'ນ້ອຍ', role: 'cashier', pin: '5678', active: true });
+});
+
+test('only owners can create or modify an owner account', () => {
+  const newOwner = { name: 'New owner', role: 'owner', pin: '4567' };
+  const changeOwner = { ...owner, pin: '4567' };
+  const demoteOwner = { ...owner, role: 'cashier' };
+  const promoteCashier = { ...cashier, role: 'owner' };
+  for (const member of [newOwner, changeOwner, demoteOwner, promoteCashier]) {
+    assert.throws(() => saveStaffMember(defaultStaff, member, 1000, manager.id), { code: 'forbidden' });
+  }
+  const added = saveStaffMember(defaultStaff, newOwner, 1000, owner.id);
+  assert.equal(added.at(-1).role, 'owner');
+  const edited = saveStaffMember(added, changeOwner, 1100, owner.id);
+  assert.equal(edited[0].pin, '4567');
+});
+
+test('staff mutations require an active authorized actor and preserve their own role and access', () => {
+  const editedCashier = { ...cashier, name: 'Updated cashier' };
+  const disabledManager = defaultStaff.map(member => member.id === manager.id ? { ...member, active: false } : member);
+  assert.throws(() => saveStaffMember(disabledManager, editedCashier, 1000, manager.id), { code: 'forbidden' });
+  assert.throws(() => saveStaffMember(defaultStaff, editedCashier, 1000, cashier.id), { code: 'forbidden' });
+  assert.throws(() => saveStaffMember(defaultStaff, editedCashier, 1000), { code: 'forbidden' });
+  assert.throws(() => saveStaffMember(defaultStaff, { ...manager, active: false }, 1000, manager.id), { code: 'forbidden' });
+  assert.throws(() => saveStaffMember(defaultStaff, { ...manager, role: 'cashier' }, 1000, manager.id), { code: 'forbidden' });
+  assert.deepEqual(saveStaffMember(defaultStaff, editedCashier, 1000, manager.id).at(-1), editedCashier);
 });
 
 test('a shift counts only payments taken while it was open and expects float plus cash', () => {
@@ -39,12 +71,45 @@ test('a shift counts only payments taken while it was open and expects float plu
   session = applyOrderAction(session, '2', 'pay', 'transfer', 150);
   session = applyOrderAction(session, '3', 'pay', 'cash', 160);
   assert.deepEqual(shiftTotals(currentShift(session.shifts), session.orders, 200), { orderCount: 2, cash: 20000, transfer: 45000, expectedCash: 220000 });
-  session = closeShift(session, owner, 215000, 300);
+  session = closeShift(session, owner, 215000, 300, '100');
   const closed = session.shifts[0];
   assert.equal(currentShift(session.shifts), undefined);
   assert.equal(closed.difference, -5000);
   assert.equal(closed.closedByName, owner.name);
-  assert.throws(() => closeShift(session, owner, 0, 310), { code: 'no-shift' });
+  assert.throws(() => closeShift(session, owner, 0, 310, '100'), { code: 'stale-shift' });
+});
+
+test('cloud shift totals use assigned payment amounts even when the cashier clock is behind', () => {
+  const shift = { id: 'current', openingCash: 200000, openedAt: 100000 };
+  const orders = [{ paid: true, paidAt: 700000, method: 'cash', items: [{ price: 99999, quantity: 1 }] }];
+  const payments = [
+    { shiftId: 'previous', method: 'cash', amount: 90000, confirmedAt: 150000 },
+    { shiftId: 'current', method: 'cash', amount: 35000, confirmedAt: 700000 },
+    { shiftId: 'current', method: 'transfer', amount: 45000, confirmedAt: 700001 },
+  ];
+  assert.deepEqual(shiftTotals(shift, orders, 400000, payments), { orderCount: 2, cash: 35000, transfer: 45000, expectedCash: 235000 });
+  assert.deepEqual(shiftTotals(shift, orders, 400000, []), { orderCount: 0, cash: 0, transfer: 0, expectedCash: 200000 });
+});
+
+test('a drawer count can only close the shift reviewed at confirmation', () => {
+  let session = openShift({ orders: [], shifts: [] }, cashier, 100000, 100);
+  session = closeShift(session, owner, 100000, 200, '100');
+  session = openShift(session, cashier, 200000, 300);
+  assert.throws(() => closeShift(session, owner, 100000, 400, '100'), { code: 'stale-shift' });
+  assert.throws(() => closeShift(session, owner, 200000, 400), { code: 'stale-shift' });
+  assert.equal(currentShift(session.shifts).id, '300');
+  const closed = closeShift(session, owner, 200000, 410, '300');
+  assert.equal(currentShift(closed.shifts), undefined);
+  assert.equal(closed.shifts[0].difference, 0);
+});
+
+test('a replacement shift opened in the same millisecond has a different review identity', () => {
+  let session = openShift({ orders: [], shifts: [] }, cashier, 100000, 100);
+  const reviewedId = currentShift(session.shifts).id;
+  session = closeShift(session, owner, 100000, 100, reviewedId);
+  session = openShift(session, cashier, 200000, 100);
+  assert.notEqual(currentShift(session.shifts).id, reviewedId);
+  assert.throws(() => closeShift(session, owner, 100000, 200, reviewedId), { code: 'stale-shift' });
 });
 
 test('shift amounts must be whole, non-negative kip', () => {
@@ -130,7 +195,8 @@ test('undo puts an order and its table back exactly as before', () => {
 test('undo is refused once someone else has moved the order on', () => {
   const before = { id: '1', table: 4, status: 'pending', paid: false, createdAt: 1, items: [] };
   const paid = applyOrderAction({ orders: [before], clearedAt: {}, calls: {} }, '1', 'pay', 'cash', 50);
-  const started = applyOrderAction(paid, '1', 'start', undefined, 55);
+  const handedOff = applyOrderAction(paid, '1', 'kitchen-sent', undefined, 53);
+  const started = applyOrderAction(handedOff, '1', 'start', undefined, 55);
   assert.equal(undoOrderAction(paid, before, undefined, 'queued').orders[0].status, 'pending');
   assert.throws(() => undoOrderAction(started, before, undefined, 'queued'), { code: 'changed' });
 });
@@ -148,10 +214,4 @@ test('reports count payments from today or the last 7 days in Vientiane time', (
   assert.equal(paidInRange(orders, 'today', now).length, 1);
   assert.equal(paidInRange(orders, 'week', now).length, 3);
   assert.equal(paidInRange(orders, 'all', now).length, 4);
-});
-
-test('kitchen totals add up each dish and size across open tickets', () => {
-  const line = (id, size, quantity) => ({ id, size, quantity, price: 1 });
-  const totals = kitchenTotals([{ items: [line('pork', 'regular', 2), line('tea', 'regular', 1)] }, { items: [line('pork', 'regular', 3), line('pork', 'large', 1)] }]);
-  assert.deepEqual(totals.map(row => `${row.key}=${row.quantity}`), ['pork:regular=5', 'tea:regular=1', 'pork:large=1']);
 });

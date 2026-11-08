@@ -1,13 +1,12 @@
-import { orderTotal } from './order-model.mjs';
+import { isActiveOrder, orderTotal } from './order-model.mjs';
 import { initialMenu, tableCount } from './data.js';
 
-export const roles = ['owner', 'manager', 'cashier', 'kitchen'];
+export const roles = ['owner', 'manager', 'cashier'];
 // Screens each role may open, in sidebar order; a sign-in lands on the first one.
 export const roleViews = {
-  owner: ['tables', 'orders', 'kitchen', 'shift', 'menu', 'table-setup', 'staff', 'reports', 'settings', 'pos'],
-  manager: ['tables', 'orders', 'kitchen', 'shift', 'menu', 'table-setup', 'staff', 'reports', 'pos'],
+  owner: ['tables', 'orders', 'shift', 'menu', 'table-setup', 'staff', 'reports', 'settings', 'pos'],
+  manager: ['tables', 'orders', 'shift', 'menu', 'table-setup', 'staff', 'reports', 'pos'],
   cashier: ['tables', 'orders', 'shift', 'menu', 'pos'],
-  kitchen: ['kitchen'],
 };
 // The customer menu is public, so every signed-in role may preview it.
 export const canOpen = (role, view) => view === 'customer' || Boolean(roleViews[role]?.includes(view));
@@ -19,11 +18,13 @@ export const defaultStaff = [
   { id: 'owner-1', name: 'ສົມພອນ', role: 'owner', pin: '1111', active: true },
   { id: 'manager-1', name: 'ມະນີ', role: 'manager', pin: '2222', active: true },
   { id: 'cashier-1', name: 'ແສງດາວ', role: 'cashier', pin: '3333', active: true },
-  { id: 'kitchen-1', name: 'ບຸນມີ', role: 'kitchen', pin: '4444', active: true },
 ];
+export const canSignInStaff = member => Boolean(member?.active && roles.includes(member.role));
+export const canEditStaffMember = (actor, targetRole) => canSignInStaff(actor) && canOpen(actor.role, 'staff')
+  && (actor.role === 'owner' || targetRole !== 'owner');
 // Only the first demo visit defaults to its owner; a revoked selection stays locked.
 export function resolveStaffUser(staff, userId) {
-  return staff.find(member => member.active && (userId ? member.id === userId : member.role === 'owner')) ?? null;
+  return staff.find(member => canSignInStaff(member) && (userId ? member.id === userId : member.role === 'owner')) ?? null;
 }
 // An empty zone shows the translated default floor name.
 export const defaultTables = (count = tableCount) => Array.from({ length: count }, (_, index) => ({ number: index + 1, seats: (index + 1) % 3 === 0 ? 6 : 4, zone: '' }));
@@ -37,8 +38,9 @@ export const activityLimit = 300;
 const fail = code => Object.assign(new Error(code), { code });
 const validAmount = amount => Number.isInteger(amount) && amount >= 0 && amount <= 1e10;
 const hasOwner = staff => staff.some(member => member.active && member.role === 'owner');
+// Keep saved kitchen accounts so an owner can give them a supported role.
 const validMember = member => typeof member?.id === 'string' && typeof member.name === 'string' && member.name.trim().length > 0
-  && roles.includes(member.role) && /^\d{4}$/.test(member.pin) && typeof member.active === 'boolean';
+  && (roles.includes(member.role) || member.role === 'kitchen') && /^\d{4}$/.test(member.pin) && typeof member.active === 'boolean';
 const validShift = shift => typeof shift?.id === 'string' && Number.isFinite(shift.openedAt) && validAmount(shift.openingCash)
   && typeof shift.openedByName === 'string' && (shift.closedAt === undefined || Number.isFinite(shift.closedAt));
 const validTables = tables => Array.isArray(tables) && tables.length >= 1 && tables.length <= maxTables
@@ -70,20 +72,31 @@ export function logActivity(session, entry, now = Date.now()) {
   return { ...session, activity: [{ id: `${now}-${Math.random().toString(36).slice(2, 7)}`, at: now, ...entry }, ...activity].slice(0, activityLimit) };
 }
 
-export function saveStaffMember(staff, member, now = Date.now()) {
+export function saveStaffMember(staff, member, now = Date.now(), actorId) {
+  const id = member.id || `staff-${now.toString(36)}`;
+  const actor = staff.find(item => item.id === actorId);
+  const previous = staff.find(item => item.id === id);
+  if (!canEditStaffMember(actor, previous?.role) || !canEditStaffMember(actor, member.role)) throw fail('forbidden');
   const name = String(member.name ?? '').trim();
   if (!name || name.length > 40) throw fail('name');
   if (!roles.includes(member.role)) throw fail('role');
   if (!/^\d{4}$/.test(member.pin ?? '')) throw fail('pin');
-  const saved = { id: member.id || `staff-${now.toString(36)}`, name, role: member.role, pin: member.pin, active: member.active !== false };
-  const next = staff.some(item => item.id === saved.id) ? staff.map(item => item.id === saved.id ? saved : item) : [...staff, saved];
+  const saved = { id, name, role: member.role, pin: member.pin, active: member.active !== false };
+  const next = previous ? staff.map(item => item.id === id ? saved : item) : [...staff, saved];
   if (!hasOwner(next)) throw fail('last-owner');
+  if (id === actorId && (saved.role !== actor.role || !saved.active)) throw fail('forbidden');
   return next;
 }
 
 export const currentShift = shifts => shifts.find(shift => !shift.closedAt);
 
-export function shiftTotals(shift, orders, now = Date.now()) {
+export function shiftTotals(shift, orders, now = Date.now(), payments) {
+  if (payments !== undefined) {
+    const assigned = payments.filter(payment => payment.shiftId === shift.id);
+    const total = method => assigned.filter(payment => payment.method === method).reduce((sum, payment) => sum + payment.amount, 0);
+    const cash = total('cash');
+    return { orderCount: assigned.length, cash, transfer: total('transfer'), expectedCash: shift.openingCash + cash };
+  }
   const end = shift.closedAt ?? now;
   const paid = orders.filter(order => order.paid && order.paidAt >= shift.openedAt && order.paidAt <= end);
   const total = method => paid.filter(order => order.method === method).reduce((sum, order) => sum + orderTotal(order.items), 0);
@@ -94,13 +107,16 @@ export function shiftTotals(shift, orders, now = Date.now()) {
 export function openShift(session, member, openingCash, now = Date.now()) {
   if (currentShift(session.shifts)) throw fail('shift-open');
   if (!validAmount(openingCash)) throw fail('amount');
-  const shift = { id: String(now), openedAt: now, openedBy: member.id, openedByName: member.name, openingCash };
+  const previousIds = new Set(session.shifts.map(shift => shift.id));
+  let id = String(now);
+  for (let suffix = 1; previousIds.has(id); suffix += 1) id = `${now}-${suffix}`;
+  const shift = { id, openedAt: now, openedBy: member.id, openedByName: member.name, openingCash };
   return { ...session, shifts: [shift, ...session.shifts].slice(0, 200) };
 }
 
-export function closeShift(session, member, countedCash, now = Date.now()) {
+export function closeShift(session, member, countedCash, now = Date.now(), reviewedShiftId) {
   const shift = currentShift(session.shifts);
-  if (!shift) throw fail('no-shift');
+  if (!shift || shift.id !== reviewedShiftId) throw fail('stale-shift');
   if (!validAmount(countedCash)) throw fail('amount');
   const totals = shiftTotals(shift, session.orders, now);
   // Keep the totals with the shift, so later edits cannot change a closed count.
@@ -117,7 +133,7 @@ export function addTable(tables) {
 export function removeLastTable(tables, orders) {
   if (tables.length <= 1) throw fail('min-tables');
   const last = tables[tables.length - 1].number;
-  if (orders.some(order => order.table === last && order.status !== 'completed')) throw fail('table-busy');
+  if (orders.some(order => order.table === last && isActiveOrder(order))) throw fail('table-busy');
   return tables.slice(0, -1);
 }
 
@@ -189,18 +205,4 @@ export function paidInRange(orders, range, now = Date.now()) {
   if (range === 'all') return paid;
   const start = startOfDay(now) - (range === 'week' ? 6 * day : 0);
   return paid.filter(order => (order.paidAt ?? order.createdAt) >= start);
-}
-
-// How many of each dish the kitchen still has to cook across its open tickets.
-export function kitchenTotals(orders) {
-  const rows = new Map();
-  for (const order of orders) {
-    for (const item of order.items) {
-      const key = `${item.id}:${item.size ?? 'regular'}`;
-      const row = rows.get(key) ?? { key, item, size: item.size ?? 'regular', quantity: 0 };
-      row.quantity += item.quantity;
-      rows.set(key, row);
-    }
-  }
-  return [...rows.values()].sort((a, b) => b.quantity - a.quantity);
 }

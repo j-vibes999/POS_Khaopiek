@@ -62,6 +62,10 @@ export function PosOrder({ table, tables, menu, draft, onTable, onUpdateDraft, o
     return () => watch.disconnect();
   }, []);
   function setCart(update, afterSave) {
+    if (draft.attempted) {
+      setError(t('ກວດຜົນອໍເດີກ່ອນແກ້ໄຂ · ກົດບັນທຶກອີກຄັ້ງ', 'ตรวจสอบผลออเดอร์ก่อนแก้ไข กดบันทึกอีกครั้ง'));
+      return false;
+    }
     const saved = savePosCart(onUpdateDraft, update, pendingChange, afterSave);
     setRetryChange(pendingChange.current);
     if (!saved) {
@@ -85,9 +89,9 @@ export function PosOrder({ table, tables, menu, draft, onTable, onUpdateDraft, o
     if (cleared?.table !== table) return;
     setCart(rows => restorePosCart(rows, cleared.items), () => setCleared(null));
   }
-  function send(pay) {
+  async function send(pay) {
     if (pendingChange.current) return;
-    try { const message = onSubmit(pay); if (message) setError(message); }
+    try { const message = await onSubmit(pay); if (message) setError(message); }
     catch { setError(t('ສົ່ງອໍເດີບໍ່ສຳເລັດ · ກະລຸນາລອງໃໝ່', 'ส่งออเดอร์ไม่สำเร็จ · กรุณาลองใหม่')); }
   }
   return <section className="pos-screen">
@@ -129,7 +133,7 @@ export function PosOrder({ table, tables, menu, draft, onTable, onUpdateDraft, o
             {row.category !== 'drinks' && <button className={`pos-chip ${row.noHerbs ? 'selected' : ''}`} aria-pressed={row.noHerbs} onClick={() => change(row, { noHerbs: !row.noHerbs })}>{t('ບໍ່ໃສ່ຜັກ', 'ไม่ใส่ผัก')}</button>}
             <button className={`pos-chip ${row.customizationNote ? 'selected' : ''}`} onClick={() => setNoteFor(noteFor === row.key ? null : row.key)}><Pencil size={14}/>{row.customizationNote || t('ໝາຍເຫດ', 'หมายเหตุ')}</button>
             </div>
-            {noteFor === row.key && <input className="pos-note" aria-label={t('ໝາຍເຫດອາຫານ', 'หมายเหตุอาหาร')} autoFocus maxLength={80} defaultValue={row.customizationNote} placeholder={t('ເຊັ່ນ ບໍ່ເຜັດ, ໃສ່ຖົງ', 'เช่น ไม่เผ็ด, ใส่ถุง')} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} onBlur={event => change(row, { customizationNote: event.target.value }, () => setNoteFor(null))}/>}
+            {noteFor === row.key && <input className="pos-note" aria-label={t('ໝາຍເຫດອາຫານ', 'หมายเหตุอาหาร')} autoFocus maxLength={80} defaultValue={row.customizationNote} placeholder={t('ລະບຸໝາຍເຫດອາຫານ', 'ระบุหมายเหตุอาหาร')} onKeyDown={event => { if (event.key === 'Enter') event.currentTarget.blur(); }} onBlur={event => change(row, { customizationNote: event.target.value }, () => setNoteFor(null))}/>}
           </details>}
           <div className="stepper"><button aria-label={t('ຫຼຸດຈຳນວນ', 'ลดจำนวน')} onClick={() => setQuantity(row, row.quantity - 1)}>{row.quantity === 1 ? <X size={17}/> : <Minus size={17}/>}</button><b aria-live="polite">{row.quantity}</b><button aria-label={t('ເພີ່ມຈຳນວນ', 'เพิ่มจำนวน')} disabled={unavailable || row.quantity >= 30} onClick={() => setQuantity(row, row.quantity + 1)}><Plus size={17}/></button></div>
           </div>
@@ -139,9 +143,9 @@ export function PosOrder({ table, tables, menu, draft, onTable, onUpdateDraft, o
         {(error || soldOut) && <p className="form-error" role="alert">{error || t('ມີເມນູທີ່ໝົດໃນລາຍການ · ກະລຸນາລຶບອອກກ່ອນສົ່ງ', 'มีเมนูที่หมดในรายการ · กรุณาลบออกก่อนส่ง')}</p>}
         {retryChange && <button className="button secondary full" onClick={() => setCart(retryChange.update, retryChange.afterSave)}>{t('ລອງບັນທຶກໃໝ່', 'ลองบันทึกใหม่')}</button>}
         <div className="pos-total"><span>{t('ລວມທັງໝົດ', 'รวมทั้งหมด')}</span><strong>{money(orderTotal(cart))} <small>₭</small></strong></div>
-        <button className="button primary full" disabled={!cart.length || soldOut || Boolean(retryChange)} onClick={() => send(true)}><Banknote size={20}/>{t('ສົ່ງອໍເດີ ແລະ ຮັບເງິນ', 'ส่งออเดอร์และรับเงิน')}</button>
+        <button className="button primary full" disabled={!cart.length || soldOut || Boolean(retryChange)} onClick={() => send(true)}><Banknote size={20}/>{t('ກວດຍອດ ແລະ ຮັບເງິນ', 'ตรวจยอดและรับเงิน')}</button>
         <button className="button secondary full" disabled={!cart.length || soldOut || Boolean(retryChange)} onClick={() => send(false)}><Save size={18}/>{t('ບັນທຶກລໍຖ້າຮັບເງິນ', 'บันทึกรอรับเงิน')}</button>
-        <p className="pos-payment-hint">{t('ຢືນຢັນຮັບເງິນແລ້ວ ອໍເດີຈຶ່ງເຂົ້າຄົວ', 'ยืนยันรับเงินแล้ว ออเดอร์จึงเข้าครัว')}</p>
+        <p className="pos-payment-hint">{t('ຢືນຢັນອໍເດີຫຼັງຮັບເງິນ ເພື່ອພິມໃບຄົວ', 'ยืนยันออเดอร์หลังรับเงินเพื่อพิมพ์ใบครัว')}</p>
       </div>
     </aside>
     {count > 0 && !checkoutVisible && <button className="pos-jump" onClick={() => checkoutRef.current.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'end' })}><b>{count}</b><span>{t('ເບິ່ງລາຍການ ແລະ ສົ່ງ', 'ดูรายการและส่ง')}</span>{money(orderTotal(cart))} ₭<ChevronDown size={18}/></button>}

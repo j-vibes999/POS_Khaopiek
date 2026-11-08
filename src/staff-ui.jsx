@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useId, useRef } from 'react';
-import { BarChart3, ChefHat, ClipboardList, LayoutGrid, QrCode, Settings, Smartphone, UserCog, Utensils, Wallet, X } from 'lucide-react';
+import { BarChart3, ClipboardList, LayoutGrid, QrCode, Settings, Smartphone, UserCog, Utensils, Wallet, X } from 'lucide-react';
 
 // Shared pieces of the Lao/Thai staff screens.
 export const Locale = createContext();
@@ -10,17 +10,19 @@ export const itemName = (item, lang) => item[lang] || item.lo;
 export const clockTime = time => new Date(time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Vientiane', hour: '2-digit', minute: '2-digit' });
 export const shortDate = time => new Date(time).toLocaleDateString('en-GB', { timeZone: 'Asia/Vientiane', day: '2-digit', month: '2-digit', year: 'numeric' });
 export const statusText = (status, t) => ({
-  pending: t('ລໍຖ້າຮັບເງິນ', 'รอรับเงิน'),
+  pending: t('ລໍຖ້າກວດຍອດ', 'รอตรวจยอด'),
+  handoff: t('ລໍຖ້າພິມໃບຄົວ', 'รอพิมพ์ใบครัว'),
   cooking: t('ກຳລັງເຮັດ', 'กำลังทำ'),
   ready: t('ພ້ອມເສີບ', 'พร้อมเสิร์ฟ'),
   served: t('ເສີບແລ້ວ', 'เสิร์ฟแล้ว'),
   completed: t('ສຳເລັດ', 'เสร็จสิ้น'),
+  rejected: t('ກວດບໍ່ພົບຍອດ', 'ไม่พบยอด'),
   empty: t('ໂຕະຫວ່າງ', 'โต๊ะว่าง'),
 }[status === 'queued' ? 'cooking' : status]);
 export const roleText = (role, t) => ({ owner: t('ເຈົ້າຂອງຮ້ານ', 'เจ้าของร้าน'), manager: t('ຜູ້ຈັດການ', 'ผู้จัดการ'), cashier: t('ແຄຊເຊຍ', 'แคชเชียร์'), kitchen: t('ພະນັກງານຄົວ', 'พนักงานครัว') }[role]);
 export const methodText = (method, t) => method === 'transfer' ? t('ໂອນເງິນ', 'โอนเงิน') : t('ເງິນສົດ', 'เงินสด');
-export const viewLabel = (view, t) => ({ tables: t('ໂຕະອາຫານ', 'โต๊ะอาหาร'), orders: t('ອໍເດີທັງໝົດ', 'ออเดอร์ทั้งหมด'), kitchen: t('ໜ້າຈໍຄົວ', 'หน้าจอครัว'), shift: t('ກະ & ເງິນສົດ', 'กะ & เงินสด'), menu: t('ຈັດການເມນູ', 'จัดการเมนู'), 'table-setup': t('ໂຕະ & QR', 'โต๊ะ & QR'), staff: t('ພະນັກງານ', 'พนักงาน'), reports: t('ສະຫຼຸບຍອດຂາຍ', 'สรุปยอดขาย'), settings: t('ຕັ້ງຄ່າ', 'ตั้งค่า'), customer: t('ເມນູລູກຄ້າ', 'เมนูลูกค้า') }[view]);
-export const viewIcons = { tables: LayoutGrid, orders: ClipboardList, kitchen: ChefHat, shift: Wallet, menu: Utensils, 'table-setup': QrCode, staff: UserCog, reports: BarChart3, settings: Settings, customer: Smartphone };
+export const viewLabel = (view, t) => ({ tables: t('ໂຕະອາຫານ', 'โต๊ะอาหาร'), orders: t('ອໍເດີທັງໝົດ', 'ออเดอร์ทั้งหมด'), shift: t('ກະ & ເງິນສົດ', 'กะ & เงินสด'), menu: t('ຈັດການເມນູ', 'จัดการเมนู'), 'table-setup': t('ໂຕະ & QR', 'โต๊ะ & QR'), staff: t('ພະນັກງານ', 'พนักงาน'), reports: t('ສະຫຼຸບຍອດຂາຍ', 'สรุปยอดขาย'), settings: t('ຕັ້ງຄ່າ', 'ตั้งค่า'), customer: t('ເມນູລູກຄ້າ', 'เมนูลูกค้า') }[view]);
+export const viewIcons = { tables: LayoutGrid, orders: ClipboardList, shift: Wallet, menu: Utensils, 'table-setup': QrCode, staff: UserCog, reports: BarChart3, settings: Settings, customer: Smartphone };
 // Lao and Thai write some vowels before the consonant, so skip them for an avatar letter.
 export const initial = name => { const [first, second] = [...name.trim()]; return /[ເ-ໄเ-ไ]/.test(first) && second ? second : first ?? '?'; };
 
@@ -47,7 +49,11 @@ export function Dialog({ title, onClose, children, className = '' }) {
       if (previous?.isConnected) previous.focus({ preventScroll: true });
     };
   }, []);
-  return <dialog ref={ref} className={`dialog ${className}`} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); onClose(); }} onClick={event => { if (isDialogBackdropClick(event)) onClose(); }}><div className="dialog-head"><h2 id={titleId}>{title}</h2><IconButton label={t('ປິດ', 'ปิด')} onClick={onClose}><X size={22}/></IconButton></div>{children}</dialog>;
+  return <dialog ref={ref} className={`dialog ${className}`} aria-labelledby={titleId} onCancel={event => {
+    // File-picker cancellation bubbles too; only this dialog's own cancel closes it.
+    if (event.target !== event.currentTarget) return;
+    event.preventDefault(); onClose();
+  }} onClick={event => { if (isDialogBackdropClick(event)) onClose(); }}><div className="dialog-head"><h2 id={titleId}>{title}</h2><IconButton label={t('ປິດ', 'ปิด')} onClick={onClose}><X size={22}/></IconButton></div>{children}</dialog>;
 }
 // Back-office page title: icon tile, heading and one line of help, with actions on the right.
 export function PageHeader({ icon: Icon, title, text, children }) {

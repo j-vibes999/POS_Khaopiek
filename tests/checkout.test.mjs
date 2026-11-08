@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { commitCheckout, restoreDemoSession, persistDemoSession, updateDemoSession } from '../src/customer-model.mjs';
+import { commitCheckout, mergeLanOrders, restoreDemoSession, persistDemoSession, updateDemoSession } from '../src/customer-model.mjs';
 
 const item = { id: 'pork', key: 'pork-1', size: 'regular', price: 35000, quantity: 2, note: '' };
 const state = () => ({ orders: [], drafts: { 3: { cart: [item], method: 'cash' }, 7: { cart: [{ ...item, quantity: 1 }], method: 'transfer' } } });
@@ -38,6 +38,27 @@ test('submitting the cleared basket again cannot create a duplicate order', () =
   assert.equal(restoreDemoSession(browser, []).orders.length, 1);
 });
 
+test('cashier checkout does not allocate IDs from the LAN order range', () => {
+  const browser = storage();
+  const current = { ...state(), orders: [{ id: '1000000', table: 7, status: 'pending', paid: false, items: [item], source: 'qr' }] };
+  const { orderId, session } = commitCheckout(browser, current, 3, 'cashier');
+  assert.equal(orderId, '1025');
+  assert.deepEqual(session.orders.map(order => order.id), ['1025', '1000000']);
+});
+
+test('cashier imports a LAN order only once and a late poll cannot undo payment', () => {
+  const pending = { id: '1000000', table: 3, createdAt: 1000, status: 'pending', paid: false, items: [item], source: 'qr', method: 'cash' };
+  const paid = { ...pending, status: 'queued', paid: true, paidAt: 2000, lanChangedAt: 2000 };
+  const current = state();
+  const imported = mergeLanOrders(current, [pending]);
+  assert.equal(imported.drafts, current.drafts);
+  assert.deepEqual(imported.orders, [pending]);
+  assert.equal(mergeLanOrders(imported, [pending]), imported);
+  const confirmed = mergeLanOrders(imported, [paid]);
+  assert.deepEqual(confirmed.orders, [paid]);
+  assert.equal(mergeLanOrders(confirmed, [pending]), confirmed);
+});
+
 test('draft choices survive a reload before checkout', () => {
   const browser = storage();
   persistDemoSession(browser, state());
@@ -49,7 +70,7 @@ test('invalid saved data falls back to the demo without crashing', () => {
   for (const saved of ['{broken', JSON.stringify({ version: 1, orders: 'invalid', drafts: {} })]) {
     const restored = restoreDemoSession({ getItem: () => saved }, initial);
     assert.deepEqual({ orders: restored.orders, drafts: restored.drafts, soldOut: restored.soldOut, clearedAt: restored.clearedAt }, { orders: initial, drafts: {}, soldOut: [], clearedAt: {} });
-    assert.equal(restored.staff.length, 4);
+    assert.deepEqual(restored.staff.map(member => member.role), ['owner', 'manager', 'cashier']);
     assert.equal(restored.tables.length, 12);
   }
 });

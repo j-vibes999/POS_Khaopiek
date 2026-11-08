@@ -1,65 +1,85 @@
-# Khao Piek POS — UI prototype
+# Khao Piek POS
 
-Lao-first restaurant POS, with a Thai language switch. Built with React and Vite. No backend or database.
+Restaurant POS built with React, Vite and Supabase. Staff sign in through Supabase Auth. Shop settings, menus, tables, orders, payments, cash shifts and activity are saved in the shop's database. A new shop starts with an empty menu, tables and sales history.
 
 ## Run
 
 ```sh
 npm install
+cp .env.example .env.local
+# Set the Supabase project URL and publishable key in .env.local.
+npm run check:supabase
 npm start
 ```
 
-Open the Local URL printed by Vite. `npm start` builds and serves the lightweight preview at port 5173; use `npm run dev` when editing source with hot reload. `npm run build` creates `dist/`; `npm test` verifies payment gating, preparation transitions and cart totals.
+Install the database first using [the Supabase setup guide](docs/supabase-setup.md). Open [the staff app](http://127.0.0.1:5173/#orders), sign in with the authorized owner account, and enter the shop name on first use. Add the shop's dishes and tables before opening QR ordering. There are no shared PINs or preset sales.
 
-## Try the workflow
+`npm run dev` starts development with hot reload. `npm run build` creates `dist/` for a static host; `npm start` builds and previews the app on port 5173. The production app connects directly to Supabase. It does not require a cashier computer to hold a local order inbox. Missing Supabase configuration shows setup guidance instead of local business data.
 
-1. Select a table to inspect its order and take payment. Choose transfer or cash; for cash, enter or tap the amount received and the change is shown before the single confirm. The order then goes to the kitchen.
-2. In the kitchen, start cooking and mark the order ready. Tickets are ordered by payment time, a strip at the top totals every dish still to cook, ready food moves to a compact strip with expandable details, and an optional sound plays for each new ticket. Return to the cashier to serve it and close the table.
-3. Every status change shows a notice with **Undo** for 6 seconds. Undo is refused if someone else has already moved the order on, or if undoing payment would change sales in a closed shift. A payment dialog left open in another tab cannot confirm an order that has already been paid.
-4. **Add order** on a table opens the quick order screen: tap dishes, open Edit for size, “no herbs” or a note, then take payment or save awaiting payment. Payment confirmation sends the order to the kitchen.
-5. Open the customer menu, select food, customize size and notes, and submit. Its new order appears at the cashier in this browser, including other open tabs. The customer's third tab calls staff (help, pay at the table, water); the table shows a red badge and the cashier answers it from the table panel.
-6. Menu management can mark dishes unavailable; the customer menu reflects that immediately, and a basket holding that dish cannot be sent until the dish is removed. Owners and managers can add, edit and delete dishes there; customers see the same categories.
-7. Sales totals use only paid demo orders and can show today, the last 7 days or everything (Vientiane time). QR links include the selected table number.
-8. Open a cash shift before taking payments, then close it by entering the counted cash; the shift history keeps the expected amount and the difference.
+A phone can use the computer's network URL during local development. For customer access outside that network, publish `dist/` to an HTTPS host and configure the same public Supabase values at build time. Generate and print table QR codes from that published address.
 
-## Back office
+The current online test site is https://lingering-field-fc0c.darkside404404.workers.dev/. Set `VITE_PUBLIC_APP_URL` to that HTTPS address in the local cashier build too, then rebuild so table QR links use the online site. Regenerate any QR codes previously printed with a LAN address; retain the existing table keys. The public site uses the same Supabase shop, while account-free cashier access and USB printing stay on the trusted local computer.
 
-The staff sidebar has three groups: daily work (Tables, Orders, Kitchen, Shift & cash), shop management (Menu, Tables & QR, Staff, Reports) and system (Settings, customer menu preview). On phones the bottom tabs are Tables, Orders, Kitchen and Shift; the rest, the customer preview and Switch user sit under More.
+## Direct entry on this computer
 
-The counter starts with four large task filters: all tables, awaiting payment, ready to serve and guest calls. Other states sit in a separate selector. A table with several orders appears in every applicable filter; its amount is only the unpaid balance, and selecting a task opens the relevant order. The receipt distinguishes the selected order total from the whole table balance. Its primary action stays visible above the phone navigation or beneath a scrolling desktop receipt, including short screens. Serving and closing briefly guard repeated taps as the next order takes its place.
+For account-free access on the restaurant computer, run `npm run setup:device`, then run the generated `.local/device-setup.sql` once in the project’s Supabase SQL Editor. Restart `npm start` and open `http://127.0.0.1:5173/`. First use asks only for the real shop name; subsequent opens go directly to the shop. An existing shop owned by the configured verified account is reused.
 
-The kitchen puts ready food first, then separates waiting and cooking into desktop lanes. Phones use large queue selectors. Tickets show table, quantity, size, kitchen notes and one next action; only paid orders enter preparation. Batch preparation totals stay available in a collapsed disclosure. These screens still share browser-local prototype data, not a server or other devices.
+The local gateway keeps a random, revocable device key only in `.env.local`. It accepts staff requests from loopback connections with the matching local origin; the key is never included in browser code, table QR, or Git. Customer QR ordering still uses Supabase directly. Other computers and a published static site keep normal account access. Running only static `dist/` without this Node gateway does not provide trusted-device entry. Back up the local environment privately if moving the cashier computer; do not copy its device key into public hosting variables.
 
-Staff and table setup show compact counts above the records. Staff Edit actions stay visible, while the permission matrix opens on request. Settings use a plain section selector and divided rows. Tablet navigation keeps short text labels alongside icons. Quick-order choices are expandable, but kitchen notes remain visible; failed edits keep their retry and block checkout until saved.
+Revoke a lost computer in Supabase by setting its `private.pos_devices.enabled` to `false`; the next request loses access. Restoring normal account entry means removing `POS_DEVICE_KEY` from this computer’s environment and restarting the app. The verified configured owner can attach the existing device-created shop without losing its menus or transactions.
 
-Each person signs in with a 4-digit PIN from the profile at the bottom of the sidebar (More → Switch user on phones). The sidebar shows only the screens that person's role may open:
+## Daily workflow
 
-If a selected account is disabled or removed, its staff screens lock and require an active account's PIN to continue. Reloading keeps that lock; the account never falls back to the owner. Public customer QR ordering remains available.
+1. Open a cash shift with the counted starting float.
+2. A guest scans the table QR, chooses dishes and a payment method, reviews the server-checked total, pays at the counter, and confirms the order. The cashier sees it awaiting payment verification.
+3. Check the actual transfer or cash, then confirm payment. The database records the payment before a kitchen ticket can print. If printing is blocked, retry the paid order's kitchen ticket. Browser printing cannot confirm that paper reached the printer.
+4. Mark delivered food as served, then close the order. Staff can also create a walk-in order from a table.
+5. Close the cash shift with the counted drawer amount. The shift keeps its expected cash and difference. Reports use recorded payments, with dates in Vientiane time.
 
-| Role | Screens |
+The app does not verify bank transfers automatically. Guest requests cannot mark themselves paid or print kitchen tickets. A failed request retains the basket or form for retry, and repeated submissions keep the same request identity to avoid duplicate orders.
+
+## Shop management
+
+- **Menu** adds and edits the shop's own dishes, prices, categories and descriptions. Choose a photo from the computer/phone or take one with the camera, preview it, then save. Photos are resized to WebP and uploaded to Supabase Storage; an optional image URL remains available. Availability changes also apply to customer ordering.
+- **Tables & QR** adds tables, edits zones and seats, and prints table codes. A table with active orders cannot be removed.
+- **Staff** links confirmed staff accounts by email and assigns manager or cashier access. Switch an account off to remove shop access while keeping history.
+- **Settings** saves the shop name, branch, phone and enabled payment methods, and shows activity history. It has no business-data reset control.
+
+| Role | Access |
 |---|---|
-| Owner | Everything, including Settings |
-| Manager | Everything except Settings |
-| Cashier | Tables, quick order, Orders, Shift & cash (own shifts), Menu availability |
-| Kitchen | Kitchen screen only |
+| Owner | Daily work, menu, tables, staff, reports and settings |
+| Manager | Daily work, menu, tables, staff and reports |
+| Cashier | Tables, orders, cash shifts and menu availability |
 
-Demo PINs: owner `1111`, manager `2222`, cashier `3333`, kitchen `4444`. They are stored in browser storage for this prototype only; a real backend must check hashed PINs on the server.
+The customer interface supports Lao, Thai, English, Chinese, Korean and Japanese. A table QR includes an opaque table key. Each guest browser has its own order-access token and saved basket; guests cannot read another browser's order history. Shop records are stored in Supabase, with permission checks in database functions.
 
-- **Shift & cash** opens a shift with the starting float and counts cash and transfer payments taken while it is open. Closing it records the counted cash and the difference.
-- **Tables & QR** adds or removes the last table, sets each table's zone and seats, and prints QR codes for every table at once. A table with open orders cannot be removed.
-- **Staff** adds people, sets roles and PINs, and switches accounts off. The shop always keeps one active owner, and nobody can change their own role.
-- **Settings** holds the shop name, branch and phone, the payment methods customers and cashiers see, the activity log (who took payment, closed tables, changed menus, staff or settings), and a reset for the demo data.
+## Menu photos
 
-The customer view opens at `/?table=3#customer`. It has its own orange/white mobile interface, six-language menu, search, grid/list views, full-page basket and per-table order history. The three bottom tabs lead to Menu, Orders and Call staff. A preview opened from the staff screens can return to them from the menu header or the call page; customer QR links show no staff access. A link whose table is not one of the shop's tables (1–12 by default) shows a “table not found” page instead of a menu. Browser back navigation works between customer subpages. Paid orders are excluded from the outstanding amount. Closing a table's last open order clears its customer history for the next guests.
+Install migration 5 for photo uploads (`supabase/menu-images-setup.sql` after migration 4), or rerun `npm run setup:device` and install the combined `.local/device-setup.sql` on the trusted computer. No existing menu or order data is replaced. The add-menu form needs only the Lao name, integer price and category; photos, other languages and descriptions are optional.
 
-Basket items can be edited before submission, retaining their size, quantity and kitchen note. Place order opens a final confirmation showing the table, food, quantities, options, notes, payment choice and total. Back keeps the basket unchanged; only Confirm sends it. Failed saves retain the review for retry, and a changed basket must be reviewed again before it can be submitted. Matching edits combine quantities without adding a duplicate line. Checkout and order-summary space adapt to their measured height. Customer status guidance states the next action; staff order selectors show individual statuses.
+Photos are prepared in the browser (JPEG/PNG/WebP and decodable HEIC, up to 20 MiB input), oriented, resized to at most 1600px and stored as WebP up to 2 MiB in the public `pos-menu-images` bucket. Public reading lets customers see food photos. Uploads require a short-lived path issued to a current owner/manager or trusted computer; no overwrite or delete access is granted. A photo uploads only on Save, and an accepted upload is reused if saving the menu needs a retry. Old photos remain available for historical order snapshots.
 
-Basket rows keep their quoted prices when the menu price changes; differently priced rows do not merge, and option edits retain the original base quote. Store-edited English names are used for customer display and search. Shift forms accept every non-negative whole-kip amount. Clicking a staff dialog's inside padding keeps it open. Quick-order clearing offers Undo, preserving choices alongside newly added food; failed draft or call saves show a retry action. Undoing a final order close also restores the guest call that close removed, without replacing a current call.
+Camera capture starts only when pressed. It requires a camera-enabled browser on HTTPS or localhost; denied/unavailable cameras leave file selection available. The app stops camera tracks when capture ends, is cancelled, or the dialog closes.
 
-UI verification covers browser widths 320, 390, 440, 768, 1024 and 1440px across the relevant customer/staff surfaces, plus short and landscape food-sheet viewports. Actual phone keyboard, Safari safe areas and touch behavior still need physical-device verification.
+## Integrity upgrade
 
-All values are illustrative. There is no actual payment, authentication, cross-device synchronization or QR-session security. Draft baskets and demo orders are saved together in localStorage in this browser, per origin; refreshing or reopening the page preserves them. Checkout clears a basket only after the same storage write has accepted its order. Storage failure leaves the basket unchanged and offers a retry. Open tabs of this browser follow the newest saved copy, and every save starts from that copy. Simultaneous browser writes are not transactional; a central database is still required for reliable multi-device service. Sold-out dishes are saved with the demo. Clearing browser site data removes this local preview data. Both in-app QR screens replace localhost with the computer’s detected private IPv4 address and preserve the selected table and port. The phone must use the same Wi-Fi and the computer must keep the preview running. If the computer changes networks, restart `npm start` to refresh the QR address. QR links on a hosted domain keep that domain. The hosted prototype provides a reachable QR URL, with browser-local demo state still separate per device.
+For a shop already using migrations 1–5, run `supabase/integrity-upgrade.sql` once. This keeps the existing shop while making new menu saves retry-safe, preserving current sold-out/deleted states, storing correct audit facts, and freezing the table number on future receipts. Until this update is installed, the app keeps menu edits open and asks for the shop update instead of submitting through the old unsafe workflow. Other normal operations remain available.
+
+Existing old activity rows without recorded facts are retained. For existing orders, the table-number snapshot starts from the number known during this upgrade; future renumbering will preserve it. Historical details that were never stored cannot be reconstructed reliably.
+
+Operational snapshots currently include all shop history. Pagination or separate history/report endpoints remain a scaling improvement for shops with large accumulated histories. Cashier polling now coalesces slow requests so data can still apply when responses take more than three seconds.
+
+## Verification
+
+```sh
+npm test
+npm run build
+npm run check:supabase
+npm run test:supabase-db
+```
+
+The database test command needs local PostgreSQL binaries (`pg_config`, `initdb`, `pg_ctl` and `psql`); set `POS_TEST_PG_BIN` if they are outside PATH. It creates and deletes a disposable database on a private Unix socket. Automated checks cover order review, request recovery, payment integrity, role restrictions, empty-shop rendering and customer copy. Test physical phone keyboards, safe areas and the installed kitchen printer before daily operation.
 
 ## Assets
 
-Food photography is illustrative, not a claim about a real restaurant's menu. Khao piak sen photograph by Spencer, CC BY-SA 4.0; source and license are linked in the customer menu and `/credits.txt`. Other stock food and beverage photos are from Unsplash. Fonts are self-hosted Noto Sans Lao and Noto Sans Thai from Google Fonts (SIL Open Font License). Icons: Lucide (ISC).
+Bundled photographs are retained as assets for existing image references; new dishes use the shop's own image URLs or a neutral placeholder. Khao piak sen photograph by Spencer, CC BY-SA 4.0; attribution is in `/credits.txt`. Other bundled food and drink photos are from Unsplash. Fonts: Noto Sans Lao and Noto Sans Thai (SIL Open Font License). Icons: Lucide (ISC).
