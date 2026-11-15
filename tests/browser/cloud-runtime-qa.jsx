@@ -19,7 +19,22 @@ const shops = Object.fromEntries(['A', 'B'].map((key, index) => {
   orders: [], shifts: [], payments: [], activity_log: [], calls: [],
  }];
 }));
-const qa = window.cloudQa = { shops, active: 'A', commands: [], snapshots: [], receipts: {}, delay: Number(params.get('delay') || 0), holdCommand: false, rejectCreate: false, loseCreateAck: false, signOutFail: false };
+const qa = window.cloudQa = { shops, active: 'A', commands: [], snapshots: [], receipts: {}, commits: 0, failSnapshots: 0, delay: Number(params.get('delay') || 0), holdCommand: false, rejectCreate: false, loseCreateAck: false, signOutFail: false };
+qa.reads = [];
+if (params.has('optimized')) {
+ for (const shop of Object.values(shops)) {
+  shop.orders = Array.from({ length: 31 }, (_, index) => ({
+   id: id(500 + index), order_number: index + 1, table_id: shop.dining_tables[0].id, table_number: 1,
+   source: 'qr', requested_method: 'cash', status: index === 30 ? 'pending' : 'completed', paid: index !== 30,
+   created_at: new Date(Date.parse(now) + index * 1000).toISOString(), revision: 1, order_items: [],
+  })).reverse();
+  shop.activity_log = [{ id: id(620), event_type: 'order.close', actor_membership_id: shop.membership.id, created_at: now, details: { orderNumber: 30 } }];
+  shop.shifts = [{ id: id(700), opened_at: now, opened_by: shop.membership.id, opening_cash: 100000, closed_at: null },
+   ...Array.from({ length: 26 }, (_, index) => ({ id: id(701 + index), opened_at: now, opened_by: shop.membership.id, opening_cash: 100000, closed_at: now,
+    closed_by: shop.membership.id, counted_cash: 100000, cash_sales: 0, transfer_sales: 0, order_count: 0, expected_cash: 100000, difference: 0 }))];
+  shop.payments = [{ id: id(740), order_id: id(500), shift_id: id(700), confirmed_by: shop.membership.id, amount: 35000, method: 'cash', cash_received: 35000, confirmed_at: now, idempotency_key: id(740) }];
+ }
+}
 let listener;
 const session = key => ({ user: { id: shops[key].membership.user_id, email: `${key.toLowerCase()}@qa.invalid` } });
 qa.refreshAuth = () => listener?.('TOKEN_REFRESHED', session(qa.active));
@@ -32,10 +47,33 @@ const client = {
  },
  channel() { return { on() { return this; }, subscribe() { return this; } }; }, removeChannel() {},
  async rpc(name, args) {
-  if (name === 'pos_setup_status') return { data: { schemaVersion: 2, guestOrdersReady: true, paymentsReady: true }, error: null };
+  if (name === 'pos_setup_status') return { data: { schemaVersion: 2, guestOrdersReady: true, paymentsReady: true, staffReadsReady: params.has('optimized') }, error: null };
   const key = qa.active;
+  if (name === 'pos_staff_read') {
+   const { p_view: view, p_params: input } = args;
+   qa.reads.push({ key, view, input });
+   if (view === 'operational') {
+    const shop = clone(shops[key]);
+    shop.orders = shop.orders.filter(order => !['completed', 'rejected'].includes(order.status));
+    shop.shifts = shop.shifts.filter(shift => shift.closed_at === null);
+    shop.readOptimized = true;
+    shop.historyRevision = shop.activity_log[0]?.id ?? null;
+    shop.activity_log = [];
+    return { data: shop, error: null };
+   }
+   if (qa.holdRead === key) await new Promise(resolve => { qa.releaseRead = resolve; });
+   if (view === 'reports') {
+    const cash = key === 'B' ? 99000 : input.range === 'all' ? 540000 : 120000;
+    return { data: { total: cash, orderCount: 2, cash, transfer: 0, cashCount: 2, transferCount: 0, items: [] }, error: null };
+   }
+   const rows = view === 'orders' ? shops[key].orders.filter(order => order.status !== 'pending' && (!input.query || String(order.order_number).includes(input.query) || '01'.includes(input.query.padStart(2, '0'))))
+    : view === 'activity' ? shops[key].activity_log : shops[key].shifts.filter(shift => shift.closed_at !== null);
+   const end = input.offset + input.limit;
+   return { data: { rows: clone(rows.slice(input.offset, end)), total: rows.length, hasMore: end < rows.length }, error: null };
+  }
   if (name === 'pos_staff_snapshot') {
    qa.snapshots.push({ key, restaurantId: args.p_restaurant_id });
+   if (qa.failSnapshots > 0) { --qa.failSnapshots; return { data: null, error: { code: '503', message: 'offline' } }; }
    const result = clone(shops[key]);
    if (qa.delay) await new Promise(resolve => setTimeout(resolve, qa.delay));
    return { data: result, error: null };
@@ -62,4 +100,4 @@ const client = {
   return { data: result, error: null };
  },
 };
-createRoot(document.getElementById('root')).render(<CloudApp client={client}/>);
+createRoot(document.getElementById('root')).render(<React.Profiler id="cloud-runtime" onRender={() => { ++qa.commits; }}><CloudApp client={client}/></React.Profiler>);

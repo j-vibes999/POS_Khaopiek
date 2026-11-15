@@ -4,8 +4,9 @@ import Customer, { LanguageMenu, PaymentRecovery } from './Customer';
 import { copy, languages } from './customer-copy.js';
 import { checkoutReviewKey } from './customer-model.mjs';
 import { menuQuoteFields, menuQuoteIdentity, orderTotal, quotedItemPrice } from './order-model.mjs';
-import { getCloudClient } from './cloud-client.mjs';
+import { getGuestClient } from './guest-client.mjs';
 import { createCloudApi } from './cloud-api.mjs';
+import { shareSnapshot } from './snapshot-sharing.mjs';
 
 const guestKey = 'khao-piek:lan:guest:v1';
 const languageKey = 'khao-piek:lan:language:v1';
@@ -18,11 +19,36 @@ const newToken = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), by
 const errorWithCode = code => Object.assign(new Error(code || 'POS request failed'), { code });
 const validOrderId = value => typeof value === 'string' && (/^\d+$/.test(value) || /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(value));
 
+function readCookie(name) {
+  try {
+    const match = typeof document !== 'undefined' && document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]+)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch { return null; }
+}
+
+function writeCookie(name, value) {
+  try {
+    if (typeof document !== 'undefined') {
+      document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=2592000; SameSite=Lax`;
+    }
+  } catch { /* The browser may restrict cookies in private mode. */ }
+}
+
 function guestId(storage) {
-  const saved = storage.getItem(guestKey);
-  if (token.test(saved)) return saved;
+  let saved = null;
+  try { saved = storage?.getItem(guestKey); } catch { /* Storage unavailable */ }
+  if (token.test(saved)) {
+    writeCookie(guestKey, saved);
+    return saved;
+  }
+  const fromCookie = readCookie(guestKey);
+  if (token.test(fromCookie)) {
+    try { storage?.setItem(guestKey, fromCookie); } catch { /* Storage unavailable */ }
+    return fromCookie;
+  }
   const id = newToken();
-  storage.setItem(guestKey, id);
+  try { storage?.setItem(guestKey, id); } catch { /* Storage unavailable */ }
+  writeCookie(guestKey, id);
   return id;
 }
 
@@ -41,13 +67,18 @@ function savedDraft(table) {
   catch { return emptyDraft; }
 }
 
-async function request(path, table, { guest, body, requestId } = {}) {
-  const client = getCloudClient();
+async function request(path, table, { guest, body, requestId, checkSetup = false } = {}) {
+  const client = getGuestClient();
   if (!client) throw errorWithCode('unavailable');
   const api = createCloudApi(client);
   if (path === 'menu') {
-    const { data, error } = await client.rpc('pos_setup_status');
-    if (error || data?.schemaVersion < 2 || !data.guestOrdersReady) throw errorWithCode('unavailable');
+    if (checkSetup) {
+      const ready = client.rpc('pos_setup_status').then(({ data, error }) => {
+        if (error || data?.schemaVersion < 2 || !data.guestOrdersReady) throw errorWithCode('unavailable');
+      });
+      const [, menu] = await Promise.all([ready, api.getMenu(tableKey())]);
+      return menu;
+    }
     return api.getMenu(tableKey());
   }
   if (path === 'orders') return body
@@ -56,8 +87,8 @@ async function request(path, table, { guest, body, requestId } = {}) {
   throw errorWithCode('unavailable');
 }
 
-async function loadMenu(table) {
-  const shop = await request('menu', table);
+async function loadMenu(table, options) {
+  const shop = await request('menu', table, options);
   if (!Array.isArray(shop?.menu) || !Array.isArray(shop.methods) || !shop.methods.length || !Number.isInteger(shop.table)) throw errorWithCode();
   return shop;
 }
@@ -106,6 +137,7 @@ function TableCustomer({ requestedTable, language, onLanguageChange }) {
   const [ordersStatus, setOrdersStatus] = useState('loading');
   const [historyAttempt, retryHistory] = useState(0);
   const historyVersion = useRef(0);
+  const historyFlight = useRef(null);
   const menuVersion = useRef(0);
   const observedReceipt = useRef(draft.receipt?.requestId);
   const { guest, shop, error } = connection;
@@ -120,7 +152,7 @@ function TableCustomer({ requestedTable, language, onLanguageChange }) {
       try {
         const guest = guestId(localStorage);
         setConnection({ guest });
-        const shop = await loadMenu(requestedTable);
+        const shop = await loadMenu(requestedTable, { checkSetup: true });
         if (stopped) return;
         setDraft(readDraft(shop.table));
         setConnection({ guest, shop });
@@ -136,24 +168,50 @@ function TableCustomer({ requestedTable, language, onLanguageChange }) {
     if (!table || !guest || (!menuReady && !pendingRequestId)) return;
     let stopped = false;
     let timer;
+    let running = false;
+    let queued = false;
     async function load() {
-      const version = historyVersion.current;
+      clearTimeout(timer);
+      if (stopped || document.visibilityState !== 'visible') return;
+      if (running) { queued = true; return; }
+      running = true;
+      let version = historyVersion.current;
       try {
-        const data = await request('orders', table, { guest, requestId: pendingRequestId });
+        // Effect dependencies can change while a request is still in transit.
+        // Let that request settle before the new history observer starts another.
+        if (historyFlight.current) await historyFlight.current.catch(() => {});
+        if (stopped || document.visibilityState !== 'visible') return;
+        version = historyVersion.current;
+        const pending = request('orders', table, { guest, requestId: pendingRequestId });
+        historyFlight.current = pending;
+        let data;
+        try { data = await pending; }
+        finally { if (historyFlight.current === pending) historyFlight.current = null; }
         if (!Array.isArray(data?.orders)) throw errorWithCode();
         if (stopped || version !== historyVersion.current) return;
         const matchedOrder = data.matchedOrder;
         if (pendingRequestId && validOrderId(matchedOrder?.id)) recordAcceptance(pendingRequestId, matchedOrder.id, matchedOrder.orderNumber);
-        setOrders(data.orders);
-        if (Object.hasOwn(data, 'call')) setCall(data.call);
+        setOrders(current => shareSnapshot(current, data.orders));
+        if (Object.hasOwn(data, 'call')) setCall(current => shareSnapshot(current, data.call));
         setOrdersStatus(null);
       } catch {
         if (!stopped && version === historyVersion.current) setOrdersStatus('error');
+      } finally {
+        running = false;
+        if (!stopped && document.visibilityState === 'visible') {
+          if (queued) { queued = false; void load(); }
+          else timer = setTimeout(load, 4000);
+        }
       }
-      if (!stopped) timer = setTimeout(load, 4000);
     }
-    load();
-    return () => { stopped = true; clearTimeout(timer); };
+    function visibilityChanged() {
+      if (document.visibilityState !== 'visible') { clearTimeout(timer); queued = false; }
+      else void load();
+    }
+    void load();
+    document.addEventListener('visibilitychange', visibilityChanged);
+    window.addEventListener('online', load);
+    return () => { stopped = true; clearTimeout(timer); document.removeEventListener('visibilitychange', visibilityChanged); window.removeEventListener('online', load); };
   }, [table, guest, menuReady, pendingRequestId, historyAttempt]);
 
   useEffect(() => {
@@ -163,10 +221,12 @@ function TableCustomer({ requestedTable, language, onLanguageChange }) {
     }
     const timer = setInterval(refreshVisible, 15000);
     document.addEventListener('visibilitychange', refreshVisible);
+    window.addEventListener('online', refreshVisible);
     return () => {
       ++menuVersion.current;
       clearInterval(timer);
       document.removeEventListener('visibilitychange', refreshVisible);
+      window.removeEventListener('online', refreshVisible);
     };
   }, [table, menuReady]);
 
@@ -207,7 +267,10 @@ function TableCustomer({ requestedTable, language, onLanguageChange }) {
   async function refreshMenu() {
     const version = ++menuVersion.current;
     const fresh = await loadMenu(table);
-    if (version === menuVersion.current) setConnection(previous => ({ ...previous, shop: fresh }));
+    if (version === menuVersion.current) setConnection(previous => {
+      const shop = shareSnapshot(previous.shop, fresh);
+      return shop === previous.shop ? previous : { ...previous, shop };
+    });
     return fresh;
   }
 
@@ -261,7 +324,7 @@ function TableCustomer({ requestedTable, language, onLanguageChange }) {
   }
 
   async function callStaff(active) {
-    const api = createCloudApi(getCloudClient());
+    const api = createCloudApi(getGuestClient());
     await api.guestCall(tableKey(), guest, { active });
     setCall(active ? { reason: 'help', at: Date.now() } : null);
     reloadHistory();

@@ -1,0 +1,35 @@
+# Vite emits content-hashed files in /assets/.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/menu-thumbnails/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Font filenames include a content hash; keep these rules tied to that version.
+/images/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=86400
+
+/fonts/font-0.c19d274f7bcf.woff2
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/font-1.15b712c8c2a8.woff2
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/font-2.13c89ef801d3.woff2
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/font-3.9be3c676b536.woff2
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/font-4.79b4b806256d.woff2
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/font-5.5dec70487b09.woff2
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/font-6.e55b2e5679b9.woff2
+  Cache-Control: public, max-age=31536000, immutable
+/fonts/font-7.3ab680564e41.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+# These stable URLs must discover the latest asset versions on each visit.
+/fonts/fonts.css
+  Cache-Control: public, max-age=0, must-revalidate
+/
+  Cache-Control: public, max-age=0, must-revalidate
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate

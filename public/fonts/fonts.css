@@ -4,7 +4,7 @@
   font-weight: 400;
   font-stretch: normal;
   font-display: swap;
-  src: url(/fonts/font-0.ttf) format('truetype');
+  src: url(/fonts/font-0.c19d274f7bcf.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Noto Sans Lao';
@@ -12,7 +12,7 @@
   font-weight: 500;
   font-stretch: normal;
   font-display: swap;
-  src: url(/fonts/font-1.ttf) format('truetype');
+  src: url(/fonts/font-1.15b712c8c2a8.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Noto Sans Lao';
@@ -20,7 +20,7 @@
   font-weight: 600;
   font-stretch: normal;
   font-display: swap;
-  src: url(/fonts/font-2.ttf) format('truetype');
+  src: url(/fonts/font-2.13c89ef801d3.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Noto Sans Lao';
@@ -28,7 +28,7 @@
   font-weight: 700;
   font-stretch: normal;
   font-display: swap;
-  src: url(/fonts/font-3.ttf) format('truetype');
+  src: url(/fonts/font-3.9be3c676b536.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Noto Sans Thai';
@@ -36,7 +36,7 @@
   font-weight: 400;
   font-stretch: normal;
   font-display: swap;
-  src: url(/fonts/font-4.ttf) format('truetype');
+  src: url(/fonts/font-4.79b4b806256d.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Noto Sans Thai';
@@ -44,7 +44,7 @@
   font-weight: 500;
   font-stretch: normal;
   font-display: swap;
-  src: url(/fonts/font-5.ttf) format('truetype');
+  src: url(/fonts/font-5.5dec70487b09.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Noto Sans Thai';
@@ -52,7 +52,7 @@
   font-weight: 600;
   font-stretch: normal;
   font-display: swap;
-  src: url(/fonts/font-6.ttf) format('truetype');
+  src: url(/fonts/font-6.e55b2e5679b9.woff2) format('woff2');
 }
 @font-face {
   font-family: 'Noto Sans Thai';
@@ -60,5 +60,5 @@
   font-weight: 700;
   font-stretch: normal;
   font-display: swap;
-  src: url(/fonts/font-7.ttf) format('truetype');
+  src: url(/fonts/font-7.3ab680564e41.woff2) format('woff2');
 }

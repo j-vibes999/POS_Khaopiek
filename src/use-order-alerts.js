@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LAN_ORDER_ID_START } from './customer-model.mjs';
 
 const readKey = 'khao-piek:order-alerts:read';
 const chimeKey = 'khao-piek:order-alerts:chimed';
+const soundKey = 'khao-piek:order-alerts:sound';
 
 function readNumber(storage, key) {
   try {
@@ -52,6 +53,32 @@ export function useOrderAlerts({ orders, storage, enabled, scope = '' }) {
   const generation = useRef(0);
   const soundRequest = useRef(0);
 
+  const startSound = useCallback(async (playTest) => {
+    if (!enabled) return false;
+    const request = ++soundRequest.current;
+    const stamp = generation.current;
+    try {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      if (!Audio) return false;
+      if (!audio.current) {
+        const context = new Audio();
+        audio.current = context;
+        context.addEventListener?.('statechange', () => {
+          if (stamp === generation.current && audio.current === context) {
+            setSoundEnabled(soundOn.current && context.state === 'running');
+          }
+        });
+      }
+      const context = audio.current;
+      if (context.state !== 'running') await context.resume();
+      if (stamp !== generation.current || request !== soundRequest.current || context.state !== 'running') return false;
+      if (playTest && !chime(context)) return false;
+      soundOn.current = true;
+      setSoundEnabled(true);
+      return true;
+    } catch { return false; }
+  }, [enabled]);
+
   useEffect(() => {
     ++generation.current;
     // A new restaurant starts from its own inbox, even when its order numbers are lower.
@@ -66,9 +93,17 @@ export function useOrderAlerts({ orders, storage, enabled, scope = '' }) {
       if (event.storageArea !== sharedStorage || event.key !== (scope ? `${readKey}:${scope}` : readKey)) return;
       setReadState(value => value.scope === scope ? { scope, id: Math.max(value.id, readNumber(scopedStorage, readKey) ?? 0) } : value);
     }
+    // Browsers may block audio after a reload until a staff member interacts.
+    function restoreSound(event) {
+      if (!enabled || !event.isTrusted || event.target?.closest?.('.order-alerts-sound')) return;
+      if (soundOn.current && audio.current?.state === 'running') return;
+      if (readNumber(scopedStorage, soundKey) === 1) void startSound(false);
+    }
     window.addEventListener('storage', syncRead);
+    window.addEventListener('click', restoreSound, true);
     return () => {
       window.removeEventListener('storage', syncRead);
+      window.removeEventListener('click', restoreSound, true);
       ++generation.current;
       ++soundRequest.current;
       soundOn.current = false;
@@ -76,7 +111,7 @@ export function useOrderAlerts({ orders, storage, enabled, scope = '' }) {
       audio.current = null;
     };
     // Reset only when access/storage changes; new orders are handled below.
-  }, [scopedStorage, sharedStorage, scope, enabled]);
+  }, [scopedStorage, sharedStorage, scope, enabled, startSound]);
 
   useEffect(() => {
     if (!enabled || newestSeen.current.scope !== scope || newestId <= newestSeen.current.id) return;
@@ -113,25 +148,17 @@ export function useOrderAlerts({ orders, storage, enabled, scope = '' }) {
   }
 
   async function setSound(next) {
-    const request = ++soundRequest.current;
     if (!next) {
+      ++soundRequest.current;
       soundOn.current = false;
       setSoundEnabled(false);
+      saveNumber(scopedStorage, soundKey, 0);
       return true;
     }
-    try {
-      if (!enabled) return false;
-      const stamp = generation.current;
-      const Audio = window.AudioContext || window.webkitAudioContext;
-      if (!Audio) return false;
-      if (!audio.current) audio.current = new Audio();
-      const context = audio.current;
-      if (context.state !== 'running') await context.resume();
-      if (stamp !== generation.current || request !== soundRequest.current || !chime(context)) return false;
-      soundOn.current = true;
-      setSoundEnabled(true);
-      return true;
-    } catch { return false; }
+    const stamp = generation.current;
+    const started = await startSound(true);
+    if (started && stamp === generation.current && soundOn.current) saveNumber(scopedStorage, soundKey, 1);
+    return started;
   }
 
   return {

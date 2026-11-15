@@ -4,14 +4,16 @@ import { BarChart3, ClipboardList, LayoutGrid, QrCode, Settings, Smartphone, Use
 // Shared pieces of the Lao/Thai staff screens.
 export const Locale = createContext();
 export const useL = () => useContext(Locale);
-export const money = n => new Intl.NumberFormat('en-US').format(n);
+export const money = new Intl.NumberFormat('en-US').format;
 export const pad = n => String(n).padStart(2, '0');
 export const itemName = (item, lang) => item[lang] || item.lo;
-export const clockTime = time => new Date(time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Vientiane', hour: '2-digit', minute: '2-digit' });
-export const shortDate = time => new Date(time).toLocaleDateString('en-GB', { timeZone: 'Asia/Vientiane', day: '2-digit', month: '2-digit', year: 'numeric' });
+const timeFormat = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Vientiane', hour: '2-digit', minute: '2-digit' });
+export const clockTime = time => timeFormat.format(new Date(time));
+const dateFormat = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Vientiane', day: '2-digit', month: '2-digit', year: 'numeric' });
+export const shortDate = time => dateFormat.format(new Date(time));
 export const statusText = (status, t) => ({
   pending: t('ລໍຖ້າກວດຍອດ', 'รอตรวจยอด'),
-  handoff: t('ລໍຖ້າພິມໃບຄົວ', 'รอพิมพ์ใบครัว'),
+  handoff: t('ລໍຖ້າຢືນຢັນໃບຄົວ', 'รอยืนยันใบครัว'),
   cooking: t('ກຳລັງເຮັດ', 'กำลังทำ'),
   ready: t('ພ້ອມເສີບ', 'พร้อมเสิร์ฟ'),
   served: t('ເສີບແລ້ວ', 'เสิร์ฟแล้ว'),

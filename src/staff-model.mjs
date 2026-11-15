@@ -14,6 +14,7 @@ export function summarizeStaffTable(orders, call = null) {
     total: active.reduce((sum, order) => sum + orderTotal(order.items), 0),
     pendingCount: active.filter(order => order.status === 'pending').length,
     readyCount: active.filter(order => order.status === 'ready').length,
+    servedCount: active.filter(order => order.status === 'served').length,
     call,
   };
 }

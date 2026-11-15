@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Armchair, Banknote, BellRing, Check, CheckCircle2, Clock3, CookingPot, GlassWater, Hand, LayoutGrid, Printer, Users, Utensils } from 'lucide-react';
+import { Armchair, Banknote, BellRing, Check, CheckCircle2, ClipboardCheck, Clock3, CookingPot, GlassWater, Hand, LayoutGrid, Printer, Users, Utensils } from 'lucide-react';
 import { EmptyState, money, pad, statusText, useL } from './staff-ui';
 import { matchesStaffTable, nextStaffOrder, staffOrderState, summarizeStaffTable } from './staff-model.mjs';
 
@@ -7,6 +7,7 @@ export const staffStatusIcons = { pending: Banknote, handoff: Printer, queued: C
 export const staffStatusGroup = status => ['queued', 'cooking'].includes(status) ? 'kitchen' : status;
 const callIcons = { help: Hand, pay: Banknote, water: GlassWater };
 const callLabel = (reason, t) => ({ help: t('ເອີ້ນພະນັກງານ', 'เรียกพนักงาน'), pay: t('ຂໍຈ່າຍເງິນທີ່ໂຕະ', 'ขอจ่ายเงินที่โต๊ะ'), water: t('ຂໍນ້ຳເປົ່າ', 'ขอน้ำเปล่า') }[reason]);
+const awaitingClosure = t => t('ລໍຖ້າປິດໂຕະ', 'รอปิดโต๊ะ');
 
 export function StaffStatusFilters({ filters, current, count, unit, label, onSelect }) {
   return <div className="counter-task-filters" role="group" aria-label={label}>
@@ -30,7 +31,7 @@ export function TablesScreen({ tables, activeOrders, calls, activeTable, filter,
     ['handoff', statusText('handoff', t), Printer],
     ['kitchen', statusText('cooking', t), CookingPot],
     ['ready', t('ພ້ອມເສີບ', 'พร้อมเสิร์ฟ'), BellRing],
-    ['served', statusText('served', t), Utensils],
+    ['served', awaitingClosure(t), ClipboardCheck],
     ['calls', t('ລູກຄ້າເອີ້ນ', 'ลูกค้าเรียก'), Hand],
     ['empty', statusText('empty', t), Armchair],
   ].filter(([id]) => !['handoff', 'ready', 'calls'].includes(id) || states.some(state => matchesStaffTable(state, id)));
@@ -42,10 +43,10 @@ export function TablesScreen({ tables, activeOrders, calls, activeTable, filter,
   const shown = states.filter(state => matchesStaffTable(state, current));
   const zoneName = table => table.zone || t('ຊັ້ນ 1', 'ชั้น 1');
   const zones = [...new Set(tables.map(zoneName))];
-  const waiting = states.filter(state => state.call || state.pendingCount || state.readyCount || matchesStaffTable(state, 'handoff')).length;
+  const waiting = states.filter(state => state.call || state.pendingCount || state.readyCount || state.servedCount || matchesStaffTable(state, 'handoff')).length;
 
   return <section className="table-workspace counter-workspace" aria-labelledby="counter-title">
-    <div className="page-heading"><div><h1 id="counter-title">{t('ໜ້າຮ້ານ', 'หน้าร้าน')}</h1><p>{waiting
+    <div className="page-heading"><div><h1 id="counter-title" tabIndex={-1}>{t('ໜ້າຮ້ານ', 'หน้าร้าน')}</h1><p>{waiting
       ? t(`${waiting} ໂຕະລໍຖ້າທ່ານ · ເລືອກໂຕະເພື່ອເຮັດຕໍ່`, `${waiting} โต๊ะรอคุณอยู่ · เลือกโต๊ะเพื่อทำต่อ`)
       : t('ບໍ່ມີວຽກດ່ວນ · ເລືອກໂຕະເພື່ອເບິ່ງອໍເດີ', 'ไม่มีงานด่วน · เลือกโต๊ะเพื่อดูออเดอร์')}</p></div></div>
 
@@ -59,7 +60,7 @@ export function TablesScreen({ tables, activeOrders, calls, activeTable, filter,
       const inZone = shown.filter(state => zoneName(state.table) === zone);
       return inZone.length > 0 && <div className="table-zone" key={zone}>
         {zones.length > 1 && <h3 className="zone-title">{zone}<span>{inZone.length}</span></h3>}
-        <div className="table-grid counter-table-grid">{inZone.map(state => <CounterTable key={state.table.number} {...state} filter={current} active={activeTable === state.table.number} now={now} onSelect={() => onSelect(state.table.number)}/>)}</div>
+        <div className="table-grid counter-table-grid">{inZone.map(state => <CounterTable key={state.table.number} {...state} filter={current} active={activeTable === state.table.number} now={now} onSelect={event => onSelect(state.table.number, event.currentTarget)}/>)}</div>
       </div>;
     }) : <EmptyState icon={SelectedIcon} title={t('ບໍ່ມີໂຕະໃນລາຍການນີ້', 'ไม่มีโต๊ะในรายการนี้')} text={t('ເລືອກ “ທຸກໂຕະ” ເພື່ອເບິ່ງໜ້າຮ້ານ', 'เลือก “ทุกโต๊ะ” เพื่อดูหน้าร้าน')}>
       <button className="button secondary" onClick={() => setFilter('all')}>{t('ເບິ່ງທຸກໂຕະ', 'ดูทุกโต๊ะ')}</button>
@@ -67,24 +68,37 @@ export function TablesScreen({ tables, activeOrders, calls, activeTable, filter,
   </section>;
 }
 
-function CounterTable({ table, orders, due, readyCount, call, filter, active, now, onSelect }) {
+function CounterTable({ table, orders, due, readyCount, servedCount, call, filter, active, now, onSelect }) {
   const { t } = useL();
   const order = nextStaffOrder(orders, null, filter);
   const status = order ? staffOrderState(order) : 'empty';
-  const Icon = staffStatusIcons[status];
+  const allServed = servedCount > 0 && servedCount === orders.length;
+  const statusLabel = allServed ? awaitingClosure(t) : statusText(status, t);
+  const Icon = allServed ? ClipboardCheck : staffStatusIcons[status];
   const CallIcon = call && callIcons[call.reason];
   const minutes = order ? Math.max(0, Math.floor((now.getTime() - (order.paidAt ?? order.createdAt)) / 60000)) : 0;
-  const label = `${t('ໂຕະ', 'โต๊ะ')} ${pad(table.number)} · ${statusText(status, t)}${call ? ` · ${callLabel(call.reason, t)}` : ''}${orders.length ? ` · ${t('ຄ້າງຊຳລະ', 'ค้างชำระ')} ${money(due)} ₭` : ''}`;
+  const remainingLabel = order && t(`ເຫຼືອ ${orders.length} ອໍເດີ`, `เหลือ ${orders.length} ออเดอร์`);
+  const closeLabel = servedCount > 0 && !allServed && t(`${servedCount} ອໍເດີລໍຖ້າປິດ`, `${servedCount} ออเดอร์รอปิด`);
+  const paidLabel = t('ຊຳລະຄົບແລ້ວ', 'ชำระครบแล้ว');
+  const paymentLabel = due > 0 ? `${t('ຄ້າງຊຳລະ', 'ค้างชำระ')} ${money(due)} ₭` : paidLabel;
+  const label = [
+    `${t('ໂຕະ', 'โต๊ะ')} ${pad(table.number)}`, statusLabel, remainingLabel, closeLabel,
+    call && callLabel(call.reason, t), order && paymentLabel,
+  ].filter(Boolean).join(' · ');
+  const isLate = minutes >= 15 && ['pending', 'queued', 'cooking'].includes(status);
 
   return <button className={`table-tile counter-tile ${staffStatusGroup(status)} ${active ? 'is-active' : ''} ${call ? 'has-call' : ''}`} onClick={onSelect} aria-pressed={active} aria-label={label}>
     <span className="counter-tile-head"><span className="counter-table-number">{pad(table.number)}</span>{active && <span className="selected-mark"><Check size={14}/></span>}</span>
     {call && <span className="counter-guest-call"><CallIcon size={15}/>{callLabel(call.reason, t)}</span>}
-    <span className="counter-table-state"><Icon size={18}/>{statusText(status, t)}</span>
+    <span className="counter-table-state"><Icon size={18} aria-hidden="true"/>{statusLabel}</span>
     {readyCount > 0 && status !== 'ready' && <span className="counter-ready-note"><BellRing size={15}/>{t('ພ້ອມເສີບ', 'พร้อมเสิร์ฟ')} {readyCount}</span>}
+    {closeLabel && <span className="counter-close-note"><ClipboardCheck size={15} aria-hidden="true"/>{closeLabel}</span>}
     <span className="counter-table-payment">{orders.length ? due > 0
       ? <><small>{t('ຄ້າງຊຳລະ', 'ค้างชำระ')}</small><strong>{money(due)} <small>₭</small></strong></>
-      : <span className="counter-paid"><CheckCircle2 size={16}/>{t('ຊຳລະຄົບແລ້ວ', 'ชำระครบแล้ว')}</span>
+      : <span className="counter-paid"><CheckCircle2 size={16}/>{paidLabel}</span>
       : <span className="counter-seats"><Users size={16}/>{table.seats} {t('ບ່ອນນັ່ງ', 'ที่นั่ง')}</span>}</span>
-    {order && <span className={`counter-table-foot ${minutes >= 15 && ['pending', 'queued', 'cooking'].includes(status) ? 'is-late' : ''}`}><span><Clock3 size={13}/>{minutes} {t('ນາທີ', 'นาที')}</span>{orders.length > 1 && <span>{orders.length} {t('ອໍເດີ', 'ออเดอร์')}</span>}</span>}
+    {order && <span className={`counter-table-foot${isLate ? ' is-late' : ''}`}>
+      <span><Clock3 size={13}/>{minutes} {t('ນາທີ', 'นาที')}</span><strong>{remainingLabel}</strong>
+    </span>}
   </button>;
 }

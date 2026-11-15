@@ -18,7 +18,7 @@ Install the database first using [the Supabase setup guide](docs/supabase-setup.
 
 A phone can use the computer's network URL during local development. For customer access outside that network, publish `dist/` to an HTTPS host and configure the same public Supabase values at build time. Generate and print table QR codes from that published address.
 
-The current online test site is https://lingering-field-fc0c.darkside404404.workers.dev/. Set `VITE_PUBLIC_APP_URL` to that HTTPS address in the local cashier build too, then rebuild so table QR links use the online site. Regenerate any QR codes previously printed with a LAN address; retain the existing table keys. The public site uses the same Supabase shop, while account-free cashier access and USB printing stay on the trusted local computer.
+The current online site is https://khao-piek888.darkside404404.workers.dev/. Set `VITE_PUBLIC_APP_URL` to this HTTPS address in the cashier build and rebuild so table QR links open the current site. Reprint any table QR codes that point to the previous host or a LAN address, using the existing table keys. The public site uses the same Supabase shop, while account-free cashier access and USB printing stay on the trusted local computer.
 
 ## Direct entry on this computer
 
@@ -28,11 +28,13 @@ The local gateway keeps a random, revocable device key only in `.env.local`. It 
 
 Revoke a lost computer in Supabase by setting its `private.pos_devices.enabled` to `false`; the next request loses access. Restoring normal account entry means removing `POS_DEVICE_KEY` from this computer’s environment and restarting the app. The verified configured owner can attach the existing device-created shop without losing its menus or transactions.
 
+For a shared cashier computer, install `supabase/staff-permissions-upgrade.sql` in the Supabase SQL Editor after the staff reads upgrade. Update the web app and the local cashier app before changing the device's role. Verify that the owner's confirmed account signs in to the same shop on the updated website. Then run `select private.pos_set_device_cashier_access('<POS_DEVICE_ID>'::uuid, true);` as the database administrator, using the `POS_DEVICE_ID` value from this computer's `.env.local`. Reload the local cashier app. Staff can run the counter and the owner can use the signed-in web app for administration. Run the same SQL with `false` to restore the device's original role. The migration leaves the device role as configured until this choice is made.
+
 ## Daily workflow
 
 1. Open a cash shift with the counted starting float.
 2. A guest scans the table QR, chooses dishes and a payment method, reviews the server-checked total, pays at the counter, and confirms the order. The cashier sees it awaiting payment verification.
-3. Check the actual transfer or cash, then confirm payment. The database records the payment before a kitchen ticket can print. If printing is blocked, retry the paid order's kitchen ticket. Browser printing cannot confirm that paper reached the printer.
+3. Check the actual transfer or cash, then confirm payment to record it and open kitchen printing. With a regular print dialog, select **ใบออกแล้ว** when the ticket comes out, or **พิมพ์ใบครัวอีกครั้ง** to retry. Use `scripts/launch-pos-silent-print.command` on a cashier Mac configured for unattended printing to submit the print request and record kitchen handoff in one click. Pass `--local` to open the trusted cashier app after starting it on port 5173. The browser can report that it requested printing. Check the actual ticket if the printer runs out of paper or a handoff update fails.
 4. Mark delivered food as served, then close the order. Staff can also create a walk-in order from a table.
 5. Close the cash shift with the counted drawer amount. The shift keeps its expected cash and difference. Reports use recorded payments, with dates in Vientiane time.
 
@@ -67,7 +69,9 @@ For a shop already using migrations 1–5, run `supabase/integrity-upgrade.sql` 
 
 Existing old activity rows without recorded facts are retained. For existing orders, the table-number snapshot starts from the number known during this upgrade; future renumbering will preserve it. Historical details that were never stored cannot be reconstructed reliably.
 
-Operational snapshots currently include all shop history. Pagination or separate history/report endpoints remain a scaling improvement for shops with large accumulated histories. Cashier polling now coalesces slow requests so data can still apply when responses take more than three seconds.
+With [the staff reads migration](supabase/staff-read-upgrade.sql) installed, cashier polling fetches active orders and current-shift payments. Order history, closed shifts, and activity load by page, and the reports page requests totals for the selected date range. Older database installations continue to use the legacy snapshot until the migration is installed.
+
+The menu cards use prepared WebP thumbnails for matching photo URLs. Details use the original, and photos added or replaced later use their original until new thumbnails are prepared. Run `node scripts/prepare-menu-thumbnails.mjs` with `cwebp` installed and the local POS configuration in place, then rebuild and deploy to refresh the thumbnails.
 
 ## Verification
 

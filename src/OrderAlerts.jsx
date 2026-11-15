@@ -11,6 +11,9 @@ export function OrderAlerts({ orders, unreadCount, soundEnabled, onSoundToggle, 
   const panelId = useId();
   const headingId = useId();
   const title = t('ແຈ້ງເຕືອນອໍເດີໃໝ່', 'แจ้งเตือนออเดอร์ใหม่');
+  const queueLabel = t('ລໍຖ້າກວດຍອດ', 'รอตรวจยอด');
+  const soundLabel = t('ສຽງແຈ້ງເຕືອນ', 'เสียงแจ้งเตือน');
+  const soundState = soundEnabled ? t('ເປີດ', 'เปิด') : t('ປິດ', 'ปิด');
 
   function close() {
     setOpen(false);
@@ -45,16 +48,25 @@ export function OrderAlerts({ orders, unreadCount, soundEnabled, onSoundToggle, 
     if (open && unreadCount > 0) onRead();
   }, [open, unreadCount, onRead]);
 
-  const recent = open ? [...orders].sort((a, b) => b.createdAt - a.createdAt).slice(0, 8) : [];
-  const bellLabel = unreadCount > 0 ? `${title} · ${unreadCount} ${t('ຍັງບໍ່ອ່ານ', 'ยังไม่อ่าน')}` : title;
+  const pendingCount = orders.filter(order => order.status === 'pending').length;
+  const recent = open ? [...orders].sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending') || b.createdAt - a.createdAt).slice(0, 8) : [];
+  const unreadLabel = unreadCount > 0 ? ` · ${unreadCount} ${t('ຍັງບໍ່ອ່ານ', 'ยังไม่อ่าน')}` : '';
+  const bellLabel = `${title} · ${queueLabel} ${pendingCount}${unreadLabel}`;
   const noticeTitle = notice?.count > 1 ? t(`${notice.count} ອໍເດີໃໝ່`, `${notice.count} ออเดอร์ใหม่`) : t('ອໍເດີໃໝ່', 'ออเดอร์ใหม่');
   const noticeDetails = notice ? `${t('ໂຕະ', 'โต๊ะ')} ${pad(notice.table)} · #${notice.orderNumber ?? notice.id}` : '';
 
   return <div className="order-alerts" ref={container}>
-    <button type="button" className={`icon-button order-alerts-trigger${unreadCount > 0 ? ' has-unread' : ''}`} ref={trigger} aria-label={bellLabel} title={title} aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen(value => !value)}>
-      <Bell size={28} aria-hidden="true"/>
-      {unreadCount > 0 && <span className="order-alerts-count" aria-hidden="true">{unreadCount > 99 ? '99+' : unreadCount}</span>}
-    </button>
+    <div className="order-alerts-controls">
+      <button type="button" className={`icon-button order-alerts-trigger${pendingCount > 0 ? ' has-pending' : ''}`} ref={trigger} aria-label={bellLabel} title={`${queueLabel} ${pendingCount}`} aria-expanded={open} aria-controls={open ? panelId : undefined} onClick={() => setOpen(value => !value)}>
+        <Bell size={25} aria-hidden="true"/>
+        <span className="order-alerts-queue-label" aria-hidden="true">{queueLabel}</span>
+        {pendingCount > 0 && <span className="order-alerts-count" aria-hidden="true">{pendingCount > 99 ? '99+' : pendingCount}</span>}
+      </button>
+      <button type="button" className="order-alerts-sound" aria-label={soundLabel} title={`${soundLabel} · ${soundState}`} aria-pressed={soundEnabled} onClick={() => onSoundToggle(!soundEnabled)}>
+        {soundEnabled ? <Volume2 size={20} aria-hidden="true"/> : <VolumeX size={20} aria-hidden="true"/>}
+        <span aria-hidden="true">{soundState}</span>
+      </button>
+    </div>
     <span className="order-alerts-announcement" role="status">{notice && !open ? `${noticeTitle} · ${noticeDetails}` : ''}</span>
     {notice && !open && <div className="order-alerts-notice">
       <button type="button" className="order-alerts-notice-open" onClick={() => openOrder(notice.id)}>
@@ -68,15 +80,10 @@ export function OrderAlerts({ orders, unreadCount, soundEnabled, onSoundToggle, 
       <header className="order-alerts-heading">
         <div>
           <h2 id={headingId}>{title}</h2>
-          {recent.length > 0 && <p>{t(`ລ່າສຸດ ${recent.length} ອໍເດີ`, `ล่าสุด ${recent.length} ออเดอร์`)}</p>}
+          {pendingCount > 0 && <p>{queueLabel} {pendingCount} {t('ອໍເດີ', 'ออเดอร์')}</p>}
         </div>
         <button type="button" className="icon-button" aria-label={t('ປິດແຈ້ງເຕືອນ', 'ปิดการแจ้งเตือน')} onClick={close}><X size={19} aria-hidden="true"/></button>
       </header>
-      <button type="button" className="order-alerts-sound" aria-pressed={soundEnabled} onClick={() => onSoundToggle(!soundEnabled)}>
-        {soundEnabled ? <Volume2 size={20} aria-hidden="true"/> : <VolumeX size={20} aria-hidden="true"/>}
-        <span>{t('ສຽງແຈ້ງເຕືອນ', 'เสียงแจ้งเตือน')}</span>
-        <strong aria-hidden="true">{soundEnabled ? t('ເປີດ', 'เปิด') : t('ປິດ', 'ปิด')}</strong>
-      </button>
       {recent.length ? <ul className="order-alerts-list">
         {recent.map(order => {
           const created = new Date(order.createdAt);

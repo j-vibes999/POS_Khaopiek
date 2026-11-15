@@ -63,6 +63,16 @@ test('device setup and snapshot use only the private server credential; public r
   await rpc({ name: 'pos_setup_status', args: {} });
   assert.deepEqual(requests.map(request => request.body), [{ p_device_key: key, p_shop_name: 'Actual shop' }, { p_device_key: key }, {}]);
 });
+test('history reads use the server device identity and reject unrecognized views', async t => {
+  const { requests, rpc } = await start(t);
+  const args = { p_view: 'orders', p_params: { offset: 25, limit: 25 }, p_restaurant_id: 'other-shop', p_device_key: 'untrusted' };
+  assert.equal((await rpc({ name: 'pos_staff_read', args })).status, 200);
+  assert.match(requests[0].url, /\/rpc\/pos_device_read$/);
+  assert.deepEqual(requests[0].body, { p_device_key: key, p_view: 'orders', p_params: { offset: 25, limit: 25 } });
+  assert.equal((await rpc({ name: 'pos_staff_read', args: { ...args, p_view: 'staff' } })).status, 400);
+  assert.equal((await rpc({ name: 'pos_staff_read', args }, { Origin: 'https://unrelated.example' })).status, 403);
+  assert.equal(requests.length, 1);
+});
 test('gateway sanitizes database and network errors without exposing device keys', async t => {
   const { rpc } = await start(t, { fetchImpl: async () => Response.json({ code: 'P0001', message: 'device-denied', details: key }, { status: 400 }) });
   assert.deepEqual(await (await rpc({ name: 'pos_staff_snapshot' })).json(), { data: null, error: { code: 'P0001', message: 'device-denied' } });

@@ -656,7 +656,7 @@ revoke all on private.guest_call_owners from public,anon,authenticated;
 
 create or replace function public.pos_guest_orders(p_table_key uuid,p_guest_token text,p_request_id text default null)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare dining public.dining_tables; identity_id uuid; hashed text; matched uuid;
+declare dining public.dining_tables; identity_id uuid; hashed text; matched uuid; table_orders jsonb;
 begin
   if p_guest_token is null or p_guest_token !~ '^[0-9a-f]{48}$' or (p_request_id is not null and p_request_id !~ '^[0-9a-f]{48}$') then raise exception using message='guest-token',errcode='P0001'; end if;
   select t.* into dining from public.dining_tables t join public.restaurants r on r.id=t.restaurant_id where t.public_key=p_table_key and t.enabled and r.enabled;
@@ -667,8 +667,25 @@ begin
   if p_request_id is not null then
     select s.order_id into matched from private.order_submissions s where s.restaurant_id=dining.restaurant_id and s.table_id=dining.id and s.actor_key='guest:'||hashed and s.request_id=p_request_id;
   end if;
-  return jsonb_build_object('orders',coalesce((select jsonb_agg(private.pos_order_json(s.order_id) order by s.created_at desc) from private.order_submissions s where s.guest_id=identity_id),'[]'::jsonb),
-    'matchedOrder',private.pos_order_json(matched), 'call',(select jsonb_build_object('reason',c.reason,'created_at',c.created_at) from public.guest_calls c join private.guest_call_owners own on own.table_id=c.table_id where c.table_id=dining.id and c.active and own.token_hash=hashed));
+
+  select jsonb_agg(private.pos_order_json(o.id) order by o.created_at desc)
+    into table_orders
+    from public.orders o
+    where o.table_id = dining.id
+      and o.status not in ('completed', 'rejected');
+
+  if table_orders is null and identity_id is not null then
+    select jsonb_agg(private.pos_order_json(s.order_id) order by s.created_at desc)
+      into table_orders
+      from private.order_submissions s
+      where s.guest_id = identity_id;
+  end if;
+
+  return jsonb_build_object(
+    'orders', coalesce(table_orders, '[]'::jsonb),
+    'matchedOrder', private.pos_order_json(matched),
+    'call', (select jsonb_build_object('reason', c.reason, 'created_at', c.created_at) from public.guest_calls c where c.table_id = dining.id and c.active limit 1)
+  );
 end;
 $$;
 
@@ -1372,6 +1389,515 @@ returns jsonb language sql immutable set search_path = '' as $$
 $$;
 revoke all on function public.pos_setup_status() from public,anon,authenticated;
 grant execute on function public.pos_setup_status() to anon,authenticated;
+commit;
+
+select public.pos_setup_status() as setup_status;
+
+
+-- Order snapshots and payment validation look up immutable lines by order_id.
+-- The existing restaurant_id-leading unique index scans unrelated order keys.
+begin;
+create index if not exists order_items_order_line_idx
+  on public.order_items(order_id,line_number);
+commit;
+
+
+-- Keep daily polling small. Legacy snapshots and write RPCs stay available.
+begin;
+
+do $$ begin
+  if pg_catalog.to_regprocedure('private.pos_device_authorize(text)') is null
+    or pg_catalog.to_regprocedure('private.pos_order_json(uuid)') is null
+    or not exists (
+      select 1 from pg_catalog.pg_attribute
+      where attrelid='public.orders'::regclass and attname='table_number_at_order' and not attisdropped
+    ) then
+    raise exception 'Run the earlier POS migrations before installing staff reads';
+  end if;
+end $$;
+
+create index if not exists orders_staff_active_idx
+  on public.orders (restaurant_id,created_at desc,id desc)
+  where status not in ('completed','rejected');
+create index if not exists orders_staff_history_idx
+  on public.orders (restaurant_id,created_at desc,id desc)
+  where status in ('completed','rejected');
+create index if not exists orders_staff_paid_date_idx
+  on public.orders (restaurant_id,(coalesce(paid_at,created_at)))
+  where paid;
+create index if not exists shifts_staff_history_idx
+  on public.shifts (restaurant_id,opened_at desc,id desc)
+  where closed_at is not null;
+
+-- The two public wrappers obtain the member from Auth or the trusted device.
+-- Clients cannot choose a restaurant or role by supplying a membership row.
+create or replace function private.pos_staff_read_data(
+  p_member public.restaurant_memberships, p_view text, p_params jsonb
+)
+returns jsonb language plpgsql stable set search_path = '' as $$
+declare
+  rid uuid := p_member.restaurant_id;
+  open_shift uuid;
+  page_limit integer;
+  page_offset bigint;
+  query text;
+  shift_owner uuid;
+  report_range text;
+  start_at timestamptz;
+  result jsonb;
+begin
+  if p_view is null or p_view not in ('operational','orders','shifts','activity','reports')
+    or jsonb_typeof(p_params) is distinct from 'object' or octet_length(p_params::text)>4096 then
+    raise exception using message='invalid',errcode='P0001';
+  end if;
+
+  if p_view='operational' then
+    select s.id into open_shift from public.shifts s where s.restaurant_id=rid and s.closed_at is null;
+    return jsonb_build_object(
+      'restaurantId',rid,'membership',to_jsonb(p_member),'readOptimized',true,
+      'restaurants',(select to_jsonb(r) from public.restaurants r where r.id=rid),
+      'members',coalesce((select jsonb_agg(to_jsonb(m)||jsonb_build_object(
+        'email',case when p_member.role in ('owner','manager') then (select u.email from auth.users u where u.id=m.user_id) end
+      ) order by m.created_at,m.id) from public.restaurant_memberships m where m.restaurant_id=rid),'[]'::jsonb),
+      'menu_items',coalesce((select jsonb_agg(to_jsonb(m) order by m.sort_order,m.created_at,m.id)
+        from public.menu_items m where m.restaurant_id=rid and m.enabled),'[]'::jsonb),
+      'dining_tables',coalesce((select jsonb_agg(to_jsonb(t) order by t.table_number)
+        from public.dining_tables t where t.restaurant_id=rid and t.enabled),'[]'::jsonb),
+      'orders',coalesce((select jsonb_agg(private.pos_order_json(o.id) order by o.created_at desc,o.id desc)
+        from public.orders o where o.restaurant_id=rid and o.status not in ('completed','rejected')),'[]'::jsonb),
+      'shifts',coalesce((select jsonb_agg(to_jsonb(s))
+        from public.shifts s where s.restaurant_id=rid and s.id=open_shift),'[]'::jsonb),
+      'payments',coalesce((select jsonb_agg(to_jsonb(p) order by p.confirmed_at desc,p.id desc)
+        from public.payments p where p.restaurant_id=rid and p.shift_id=open_shift),'[]'::jsonb),
+      'activity_log','[]'::jsonb,'kitchen_print_jobs','[]'::jsonb,
+      'historyRevision',(select a.id from public.activity_log a where a.restaurant_id=rid order by a.created_at desc,a.id desc limit 1),
+      'calls',coalesce((select jsonb_agg(to_jsonb(c)||jsonb_build_object('table_number',t.table_number) order by t.table_number)
+        from public.guest_calls c join public.dining_tables t on t.id=c.table_id and t.restaurant_id=c.restaurant_id
+        where c.restaurant_id=rid and c.active),'[]'::jsonb)
+    );
+  end if;
+
+  if p_view='reports' then
+    if p_member.role not in ('owner','manager') then
+      raise exception using message='access-denied',errcode='P0001';
+    end if;
+    report_range:=coalesce(p_params->>'range','today');
+    if report_range not in ('today','week','all') then raise exception using message='invalid',errcode='P0001'; end if;
+    if report_range<>'all' then
+      -- Laos has a fixed UTC+7 day boundary. The seven-day range includes today.
+      start_at:=date_trunc('day',now(),'Asia/Vientiane')-
+        case when report_range='week' then interval '144 hours' else interval '0' end;
+    end if;
+    with paid_orders as materialized (
+      select o.id,o.requested_method,o.created_at from public.orders o
+      where o.restaurant_id=rid and o.paid and (start_at is null or coalesce(o.paid_at,o.created_at)>=start_at)
+    ), lines as materialized (
+      select i.menu_item_id,i.line_number,i.name_lo,i.name_th,i.image_path,i.quantity,i.line_total,
+        o.id as order_id,o.requested_method,o.created_at
+      from paid_orders o join public.order_items i on i.order_id=o.id and i.restaurant_id=rid
+    ), line_totals as (
+      select coalesce(sum(line_total),0) as total,
+        coalesce(sum(line_total) filter (where requested_method='cash'),0) as cash,
+        coalesce(sum(line_total) filter (where requested_method='transfer'),0) as transfer
+      from lines
+    ), order_counts as (
+      select count(*) as total,count(*) filter(where requested_method='cash') as cash,
+        count(*) filter(where requested_method='transfer') as transfer
+      from paid_orders
+    ), item_totals as (
+      select menu_item_id,sum(quantity) as quantity,sum(line_total) as amount from lines group by menu_item_id
+    ), newest_item_names as (
+      -- Match the existing report: labels come from the newest paid receipt.
+      select distinct on (menu_item_id) menu_item_id,name_lo,name_th,image_path
+      from lines order by menu_item_id,created_at desc,order_id desc,line_number
+    )
+    select jsonb_build_object(
+      'total',lt.total,'orderCount',oc.total,'cash',lt.cash,'transfer',lt.transfer,
+      'cashCount',oc.cash,'transferCount',oc.transfer,
+      'items',coalesce((select jsonb_agg(jsonb_build_object(
+        'id',i.menu_item_id,'name_lo',n.name_lo,'name_th',n.name_th,'image_path',n.image_path,
+        'quantity',i.quantity,'amount',i.amount
+      ) order by i.quantity desc,i.menu_item_id)
+        from item_totals i join newest_item_names n on n.menu_item_id is not distinct from i.menu_item_id
+      ),'[]'::jsonb)
+    ) into result from line_totals lt cross join order_counts oc;
+    return result;
+  end if;
+
+  if p_view='activity' and p_member.role<>'owner' then
+    raise exception using message='access-denied',errcode='P0001';
+  end if;
+  if (p_params ? 'limit' and (
+        jsonb_typeof(p_params->'limit') is distinct from 'number' or p_params->>'limit' !~ '^[1-9][0-9]?$'
+      ))
+    or (p_params ? 'offset' and (
+        jsonb_typeof(p_params->'offset') is distinct from 'number' or p_params->>'offset' !~ '^[0-9]{1,10}$'
+      )) then
+    raise exception using message='invalid',errcode='P0001';
+  end if;
+  page_limit:=least(50,coalesce((p_params->>'limit')::integer,case when p_view='activity' then 50 else 25 end));
+  page_offset:=coalesce((p_params->>'offset')::bigint,0);
+
+  if p_view='orders' then
+    query:=left(coalesce(p_params->>'query',''),64);
+    -- Apply the receipt/table search before selecting a page. strpos keeps
+    -- user-entered percent signs and underscores literal.
+    with matches as not materialized (
+      select o.id,o.created_at from public.orders o
+      where o.restaurant_id=rid and o.status in ('completed','rejected')
+        and (query='' or strpos(o.order_number::text,query)>0 or
+          strpos(lpad(o.table_number_at_order::text,greatest(2,char_length(o.table_number_at_order::text)),'0'),
+            lpad(query,greatest(2,char_length(query)),'0'))>0)
+    ), page as (
+      select * from matches order by created_at desc,id desc limit page_limit offset page_offset
+    ), tally as (select count(*) total from matches)
+    select jsonb_build_object(
+      'rows',coalesce((select jsonb_agg(private.pos_order_json(id) order by created_at desc,id desc) from page),'[]'::jsonb),
+      'total',total,'hasMore',total>page_offset+page_limit
+    ) into result from tally;
+  elsif p_view='shifts' then
+    if p_member.role='cashier' or p_params->'ownOnly'='true'::jsonb then shift_owner:=p_member.id; end if;
+    with matches as not materialized (
+      select s.* from public.shifts s where s.restaurant_id=rid and s.closed_at is not null
+        and (shift_owner is null or s.opened_by=shift_owner)
+    ), page as (
+      select * from matches order by opened_at desc,id desc limit page_limit offset page_offset
+    ), tally as (select count(*) total from matches)
+    select jsonb_build_object(
+      'rows',coalesce((select jsonb_agg(to_jsonb(page) order by opened_at desc,id desc) from page),'[]'::jsonb),
+      'total',total,'hasMore',total>page_offset+page_limit
+    ) into result from tally;
+  else
+    with page as (
+      select a.* from public.activity_log a where a.restaurant_id=rid
+      order by a.created_at desc,a.id desc limit page_limit offset page_offset
+    ), tally as (select count(*) total from public.activity_log a where a.restaurant_id=rid)
+    select jsonb_build_object(
+      'rows',coalesce((select jsonb_agg(
+        to_jsonb(a)||jsonb_build_object('details',a.details||
+          case when a.details->>'orderNumber' is null and o.order_number is not null
+            then jsonb_build_object('orderNumber',o.order_number) else '{}'::jsonb end)
+        order by a.created_at desc,a.id desc)
+        from page a left join public.orders o on o.id=a.order_id and o.restaurant_id=rid
+      ),'[]'::jsonb),
+      'total',total,'hasMore',total>page_offset+page_limit
+    ) into result from tally;
+  end if;
+  return result;
+end;
+$$;
+
+create or replace function public.pos_staff_read(p_restaurant_id uuid,p_view text,p_params jsonb)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare member public.restaurant_memberships;
+begin
+  -- An authenticated call can only act as its own account.
+  if auth.uid() is null then raise exception using message='session-expired',errcode='P0001'; end if;
+  member:=private.pos_member(p_restaurant_id);
+  return private.pos_staff_read_data(member,p_view,p_params);
+end;
+$$;
+
+create or replace function public.pos_device_read(p_device_key text,p_view text,p_params jsonb)
+returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare device private.pos_devices; member public.restaurant_memberships;
+begin
+  device:=private.pos_device_authorize(p_device_key);
+  if device.membership_id is null then raise exception using message='no-membership',errcode='P0001'; end if;
+  select m.* into member from public.restaurant_memberships m join public.restaurants r on r.id=m.restaurant_id
+  where m.restaurant_id=device.restaurant_id and m.id=device.membership_id and m.role='owner' and m.active and r.enabled;
+  if member.id is null then raise exception using message='device-denied',errcode='P0001'; end if;
+  return private.pos_staff_read_data(member,p_view,p_params);
+end;
+$$;
+
+revoke all on function private.pos_staff_read_data(public.restaurant_memberships,text,jsonb) from public,anon,authenticated;
+revoke all on function public.pos_staff_read(uuid,text,jsonb),public.pos_device_read(text,text,jsonb) from public,anon,authenticated;
+grant execute on function public.pos_staff_read(uuid,text,jsonb) to authenticated;
+grant execute on function public.pos_device_read(text,text,jsonb) to anon,authenticated;
+
+create or replace function public.pos_setup_status()
+returns jsonb language sql immutable set search_path = '' as $$
+  select jsonb_build_object(
+    'schemaVersion',2,'publicMenuReady',true,'guestOrdersReady',true,'paymentsReady',true,
+    'deviceAccessReady',true,'menuImagesReady',true,'integrityReady',true,'staffReadsReady',true
+  );
+$$;
+revoke all on function public.pos_setup_status() from public,anon,authenticated;
+grant execute on function public.pos_setup_status() to anon,authenticated;
+
+notify pgrst, 'reload schema';
+commit;
+
+-- Limit protected history at the database boundary and allow an existing
+-- trusted counter to use cashier access. Installation changes no device's role.
+begin;
+
+do $$ begin
+  if pg_catalog.to_regprocedure('public.pos_device_read(text,text,jsonb)') is null then
+    raise exception 'Install the earlier POS migrations, including staff reads, first';
+  end if;
+end $$;
+
+-- Keep the original owner binding for owner adoption and rollback. The
+-- separate cashier identity owns new activity and remains valid in history.
+alter table private.pos_devices
+  add column if not exists cashier_only boolean not null default false,
+  add column if not exists cashier_membership_id uuid;
+
+-- Retain the existing constraint name so older setup scripts do not replace it.
+alter table public.restaurant_memberships
+  drop constraint if exists device_owner_or_auth_user,
+  add constraint device_owner_or_auth_user check(user_id is not null or role in ('owner','cashier'));
+do $$ begin
+  if not exists(select 1 from pg_constraint where conrelid='private.pos_devices'::regclass and conname='pos_devices_cashier_membership_fk') then
+    alter table private.pos_devices add constraint pos_devices_cashier_membership_fk
+      foreign key(restaurant_id,cashier_membership_id)
+      references public.restaurant_memberships(restaurant_id,id) on delete restrict;
+    alter table private.pos_devices add constraint pos_devices_cashier_membership_check
+      check (
+        (cashier_membership_id is null or (membership_id is not null and cashier_membership_id<>membership_id))
+        and (not cashier_only or cashier_membership_id is not null)
+      );
+  end if;
+end $$;
+create unique index if not exists pos_devices_cashier_membership_uidx
+  on private.pos_devices(cashier_membership_id) where cashier_membership_id is not null;
+
+-- Called by the SQL Editor administrator after verifying owner sign-in on the
+-- same shop. No browser role can use this function, including account owners.
+create or replace function private.pos_set_device_cashier_access(p_device_id uuid,p_cashier_only boolean)
+returns text language plpgsql volatile set search_path = '' as $$
+declare device private.pos_devices; rid uuid; cashier_id uuid;
+begin
+  if p_device_id is null or p_cashier_only is null then raise exception 'Device ID and cashier mode are required'; end if;
+  select d.restaurant_id into rid from private.pos_devices d where d.id=p_device_id and d.enabled;
+  if rid is null then raise exception 'An active registered shop device is required'; end if;
+  perform private.pos_lock(rid);
+  select d.* into device from private.pos_devices d where d.id=p_device_id and d.restaurant_id=rid and d.enabled for update;
+  if device.id is null or not exists (
+    select 1 from public.restaurant_memberships m join public.restaurants r on r.id=m.restaurant_id
+    where m.restaurant_id=rid and m.id=device.membership_id and m.active and m.role='owner' and r.enabled
+  ) then raise exception 'An active registered shop device with an owner is required'; end if;
+
+  if not p_cashier_only then
+    update private.pos_devices set cashier_only=false where id=device.id;
+    return 'owner';
+  end if;
+
+  if not exists (
+    select 1 from public.restaurant_memberships m join auth.users u on u.id=m.user_id
+    where m.restaurant_id=rid and m.active and m.role='owner' and u.email_confirmed_at is not null
+  ) then raise exception 'Verify an owner account for this shop before enabling cashier access'; end if;
+
+  cashier_id:=device.cashier_membership_id;
+  if cashier_id is null then
+    insert into public.restaurant_memberships(restaurant_id,user_id,display_name,role)
+      values(rid,null,'ຈຸດຮັບເງິນ','cashier') returning id into cashier_id;
+  elsif not exists(
+    select 1 from public.restaurant_memberships m
+    where m.restaurant_id=rid and m.id=cashier_id and m.active and m.role='cashier' and m.user_id is null
+  ) then raise exception 'The counter cashier identity is inactive or has changed'; end if;
+
+  update private.pos_devices set cashier_only=true,cashier_membership_id=cashier_id where id=device.id;
+  return 'cashier';
+end $$;
+revoke all on function private.pos_set_device_cashier_access(uuid,boolean) from public,anon,authenticated;
+
+-- Return the effective membership to existing gateway wrappers. The stored
+-- owner binding still authorizes the device and supports account adoption.
+create or replace function private.pos_device_authorize(p_device_key text)
+returns private.pos_devices language plpgsql volatile security definer set search_path = '' as $$
+declare device private.pos_devices;
+begin
+  if auth.uid() is not null or p_device_key is null or p_device_key !~ '^[0-9a-f]{64}$' then
+    raise exception using message='device-denied',errcode='P0001';
+  end if;
+  select d.* into device from private.pos_devices d
+    where d.credential_hash=pg_catalog.encode(pg_catalog.sha256(pg_catalog.convert_to(p_device_key,'UTF8')),'hex') and d.enabled;
+  if device.id is null then raise exception using message='device-denied',errcode='P0001'; end if;
+  if device.membership_id is not null and not exists(
+    select 1 from public.restaurant_memberships m join public.restaurants r on r.id=m.restaurant_id
+    where m.id=device.membership_id and m.restaurant_id=device.restaurant_id and m.active and m.role='owner' and r.enabled
+  ) then raise exception using message='device-denied',errcode='P0001'; end if;
+  if device.cashier_only then
+    if not exists (
+      select 1 from public.restaurant_memberships m
+      where m.id=device.cashier_membership_id and m.restaurant_id=device.restaurant_id
+        and m.active and m.role='cashier' and m.user_id is null
+    ) then raise exception using message='device-denied',errcode='P0001'; end if;
+    device.membership_id:=device.cashier_membership_id;
+  end if;
+  return device;
+end $$;
+revoke all on function private.pos_device_authorize(text) from public,anon,authenticated;
+
+create or replace function public.pos_device_read(p_device_key text,p_view text,p_params jsonb)
+returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare device private.pos_devices; member public.restaurant_memberships;
+begin
+  device:=private.pos_device_authorize(p_device_key);
+  if device.membership_id is null then raise exception using message='no-membership',errcode='P0001'; end if;
+  select m.* into member from public.restaurant_memberships m join public.restaurants r on r.id=m.restaurant_id
+  where m.restaurant_id=device.restaurant_id and m.id=device.membership_id and m.active and r.enabled
+    and m.role=case when device.cashier_only then 'cashier' else 'owner' end;
+  if member.id is null then raise exception using message='device-denied',errcode='P0001'; end if;
+  return private.pos_staff_read_data(member,p_view,p_params);
+end;
+$$;
+revoke all on function public.pos_device_read(text,text,jsonb) from public,anon,authenticated;
+grant execute on function public.pos_device_read(text,text,jsonb) to anon,authenticated;
+
+-- Existing upload tickets from this device stop authorizing new uploads when
+-- it becomes a cashier. Account-bound owner and manager tickets still work.
+create or replace function public.pos_can_upload_menu_image(p_name text)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists(
+    select 1 from private.menu_image_tickets ticket
+    join public.restaurant_memberships member on member.id=ticket.membership_id and member.restaurant_id=ticket.restaurant_id
+    join public.restaurants restaurant on restaurant.id=ticket.restaurant_id
+    where ticket.path=p_name and ticket.expires_at>pg_catalog.statement_timestamp()
+      and member.active and member.role in ('owner','manager') and restaurant.enabled
+      and (ticket.device_id is null or (member.role='owner' and exists(
+        select 1 from private.pos_devices device
+        where device.id=ticket.device_id and device.enabled and not device.cashier_only
+          and device.restaurant_id=ticket.restaurant_id and device.membership_id=ticket.membership_id
+      )))
+  );
+$$;
+revoke all on function public.pos_can_upload_menu_image(text) from public,anon,authenticated;
+grant execute on function public.pos_can_upload_menu_image(text) to anon,authenticated;
+
+-- RLS receives only the caller's role/ID for the selected shop. It does not
+-- depend on an untrusted user ID or token supplied to the read.
+create or replace function private.current_restaurant_access(p_restaurant_id uuid)
+returns table(id uuid,role text) language sql stable security definer set search_path = '' as $$
+  select m.id,m.role from public.restaurant_memberships m
+  join public.restaurants r on r.id=m.restaurant_id
+  where m.restaurant_id=p_restaurant_id and m.user_id=(select auth.uid()) and m.active and r.enabled;
+$$;
+revoke all on function private.current_restaurant_access(uuid) from public,anon,authenticated;
+grant execute on function private.current_restaurant_access(uuid) to authenticated;
+
+drop policy if exists tenant_member_read on public.shifts;
+create policy tenant_member_read on public.shifts for select to authenticated
+using (exists (
+  select 1 from private.current_restaurant_access(shifts.restaurant_id) m
+  where m.role in ('owner','manager') or shifts.closed_at is null or shifts.opened_by=m.id
+));
+
+drop policy if exists tenant_member_read on public.payments;
+create policy tenant_member_read on public.payments for select to authenticated
+using (exists (
+  select 1 from private.current_restaurant_access(payments.restaurant_id) m
+  where m.role in ('owner','manager') or exists (
+    select 1 from public.shifts s
+    where s.restaurant_id=payments.restaurant_id and s.id=payments.shift_id and s.closed_at is null
+  )
+));
+
+drop policy if exists tenant_member_read on public.activity_log;
+create policy tenant_member_read on public.activity_log for select to authenticated
+using (exists (
+  select 1 from private.current_restaurant_access(activity_log.restaurant_id) m where m.role='owner'
+));
+
+-- The legacy snapshot is also returned by staff/device write commands.
+-- Keep its order shape for lost-response recovery and the archived orders UI.
+create or replace function public.pos_staff_snapshot(p_restaurant_id uuid default null)
+returns jsonb language plpgsql stable security definer set search_path = '' as $$
+declare member public.restaurant_memberships; rid uuid;
+begin
+  member:=private.pos_member(p_restaurant_id);
+  rid:=member.restaurant_id;
+  return jsonb_build_object(
+    'restaurantId',rid,'membership',to_jsonb(member),
+    'restaurants',(select to_jsonb(r) from public.restaurants r where r.id=rid),
+    'members',coalesce((select jsonb_agg(to_jsonb(m)||jsonb_build_object(
+      'email',case when member.role in ('owner','manager') then (select u.email from auth.users u where u.id=m.user_id) end
+    ) order by m.created_at,m.id) from public.restaurant_memberships m where m.restaurant_id=rid),'[]'::jsonb),
+    'menu_items',coalesce((select jsonb_agg(to_jsonb(m) order by m.sort_order,m.created_at,m.id)
+      from public.menu_items m where m.restaurant_id=rid and m.enabled),'[]'::jsonb),
+    'dining_tables',coalesce((select jsonb_agg(to_jsonb(t) order by t.table_number)
+      from public.dining_tables t where t.restaurant_id=rid and t.enabled),'[]'::jsonb),
+    'orders',coalesce((select jsonb_agg(private.pos_order_json(o.id) order by o.created_at desc,o.id)
+      from public.orders o where o.restaurant_id=rid),'[]'::jsonb),
+    'shifts',coalesce((select jsonb_agg(to_jsonb(s) order by s.opened_at desc)
+      from public.shifts s where s.restaurant_id=rid
+        and (member.role in ('owner','manager') or s.closed_at is null or s.opened_by=member.id)),'[]'::jsonb),
+    'payments',coalesce((select jsonb_agg(to_jsonb(p) order by p.confirmed_at desc)
+      from public.payments p join public.shifts s on s.restaurant_id=p.restaurant_id and s.id=p.shift_id
+      where p.restaurant_id=rid and (member.role in ('owner','manager') or s.closed_at is null)),'[]'::jsonb),
+    'kitchen_print_jobs',coalesce((select jsonb_agg(to_jsonb(k) order by k.requested_at desc)
+      from public.kitchen_print_jobs k where k.restaurant_id=rid),'[]'::jsonb),
+    'activity_log',case when member.role='owner' then coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at desc,a.id desc)
+      from public.activity_log a where a.restaurant_id=rid),'[]'::jsonb) else '[]'::jsonb end,
+    'historyRevision',(select a.id from public.activity_log a where a.restaurant_id=rid order by a.created_at desc,a.id desc limit 1),
+    'calls',coalesce((select jsonb_agg(to_jsonb(c)||jsonb_build_object('table_number',t.table_number))
+      from public.guest_calls c join public.dining_tables t on t.id=c.table_id and t.restaurant_id=c.restaurant_id
+      where c.restaurant_id=rid and c.active),'[]'::jsonb)
+  );
+end;
+$$;
+revoke all on function public.pos_staff_snapshot(uuid) from public,anon,authenticated;
+grant execute on function public.pos_staff_snapshot(uuid) to authenticated;
+
+-- Keep the existing transaction implementation private. Reinstalling the
+-- migration keeps that implementation and replaces only its public wrapper.
+do $$ begin
+  if pg_catalog.to_regprocedure('private.pos_staff_command_transaction(uuid,text,jsonb)') is null then
+    alter function public.pos_staff_command(uuid,text,jsonb) set schema private;
+    alter function private.pos_staff_command(uuid,text,jsonb) rename to pos_staff_command_transaction;
+  end if;
+end $$;
+revoke all on function private.pos_staff_command_transaction(uuid,text,jsonb) from public,anon,authenticated;
+
+create or replace function public.pos_staff_command(p_restaurant_id uuid,p_action text,p_payload jsonb)
+returns jsonb language plpgsql volatile security definer set search_path = '' as $$
+declare member public.restaurant_memberships; rid uuid; target_id uuid;
+begin
+  if p_action in ('order.pay','staff.save') and jsonb_typeof(p_payload)='object' and octet_length(p_payload::text)<=120000 then
+    member:=private.pos_member(p_restaurant_id);
+    rid:=member.restaurant_id;
+    perform private.pos_lock(rid);
+    member:=private.pos_member(rid);
+    if p_action='order.pay' and member.role='cashier' then
+      target_id:=(p_payload->>'id')::uuid;
+      -- Return the same terminal response for every retry. A caller must not
+      -- infer closed-shift cash tender by guessing the original payment inputs.
+      if exists (
+        select 1 from public.payments p join public.shifts s on s.id=p.shift_id and s.restaurant_id=p.restaurant_id
+        where p.restaurant_id=rid and p.order_id=target_id and s.closed_at is not null
+      ) then raise exception using message='already-paid',errcode='P0001'; end if;
+    elsif p_action='staff.save' and member.role in ('owner','manager') then
+      target_id:=nullif(p_payload->>'id','')::uuid;
+      -- Device access is managed through its registration, not through the
+      -- editor for employee accounts.
+      if exists(select 1 from private.pos_devices d where d.restaurant_id=rid and d.cashier_membership_id=target_id) then
+        raise exception using message='access-denied',errcode='P0001';
+      end if;
+    end if;
+  end if;
+  return private.pos_staff_command_transaction(p_restaurant_id,p_action,p_payload);
+exception when invalid_text_representation then
+  raise exception using message='invalid',errcode='P0001';
+end;
+$$;
+revoke all on function public.pos_staff_command(uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.pos_staff_command(uuid,text,jsonb) to authenticated;
+
+create or replace function public.pos_setup_status()
+returns jsonb language sql immutable set search_path = '' as $$
+  select jsonb_build_object(
+    'schemaVersion',2,'publicMenuReady',true,'guestOrdersReady',true,'paymentsReady',true,
+    'deviceAccessReady',true,'menuImagesReady',true,'integrityReady',true,'staffReadsReady',true,
+    'staffPermissionsReady',true
+  );
+$$;
+revoke all on function public.pos_setup_status() from public,anon,authenticated;
+grant execute on function public.pos_setup_status() to anon,authenticated;
+
+notify pgrst, 'reload schema';
 commit;
 
 select public.pos_setup_status() as setup_status;

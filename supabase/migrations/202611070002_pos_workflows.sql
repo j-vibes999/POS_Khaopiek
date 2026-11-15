@@ -347,7 +347,7 @@ revoke all on private.guest_call_owners from public,anon,authenticated;
 
 create or replace function public.pos_guest_orders(p_table_key uuid,p_guest_token text,p_request_id text default null)
 returns jsonb language plpgsql stable security definer set search_path = '' as $$
-declare dining public.dining_tables; identity_id uuid; hashed text; matched uuid;
+declare dining public.dining_tables; identity_id uuid; hashed text; matched uuid; table_orders jsonb;
 begin
   if p_guest_token is null or p_guest_token !~ '^[0-9a-f]{48}$' or (p_request_id is not null and p_request_id !~ '^[0-9a-f]{48}$') then raise exception using message='guest-token',errcode='P0001'; end if;
   select t.* into dining from public.dining_tables t join public.restaurants r on r.id=t.restaurant_id where t.public_key=p_table_key and t.enabled and r.enabled;
@@ -358,8 +358,25 @@ begin
   if p_request_id is not null then
     select s.order_id into matched from private.order_submissions s where s.restaurant_id=dining.restaurant_id and s.table_id=dining.id and s.actor_key='guest:'||hashed and s.request_id=p_request_id;
   end if;
-  return jsonb_build_object('orders',coalesce((select jsonb_agg(private.pos_order_json(s.order_id) order by s.created_at desc) from private.order_submissions s where s.guest_id=identity_id),'[]'::jsonb),
-    'matchedOrder',private.pos_order_json(matched), 'call',(select jsonb_build_object('reason',c.reason,'created_at',c.created_at) from public.guest_calls c join private.guest_call_owners own on own.table_id=c.table_id where c.table_id=dining.id and c.active and own.token_hash=hashed));
+
+  select jsonb_agg(private.pos_order_json(o.id) order by o.created_at desc)
+    into table_orders
+    from public.orders o
+    where o.table_id = dining.id
+      and o.status not in ('completed', 'rejected');
+
+  if table_orders is null and identity_id is not null then
+    select jsonb_agg(private.pos_order_json(s.order_id) order by s.created_at desc)
+      into table_orders
+      from private.order_submissions s
+      where s.guest_id = identity_id;
+  end if;
+
+  return jsonb_build_object(
+    'orders', coalesce(table_orders, '[]'::jsonb),
+    'matchedOrder', private.pos_order_json(matched),
+    'call', (select jsonb_build_object('reason', c.reason, 'created_at', c.created_at) from public.guest_calls c where c.table_id = dining.id and c.active limit 1)
+  );
 end;
 $$;
 

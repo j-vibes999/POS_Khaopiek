@@ -99,6 +99,10 @@ export function createDeviceGateway({ supabaseUrl, publishableKey, deviceKey, fe
     switch (input.name) {
       case 'pos_setup_status': rpcName = 'pos_setup_status'; rpcArgs = {}; break;
       case 'pos_staff_snapshot': rpcName = 'pos_device_snapshot'; rpcArgs = { p_device_key: deviceKey }; break;
+      case 'pos_staff_read':
+        if (!['operational', 'orders', 'activity', 'shifts', 'reports'].includes(args.p_view) || !record(args.p_params)) return failure(res, 400, 'invalid-request');
+        rpcName = 'pos_device_read';
+        rpcArgs = { p_device_key: deviceKey, p_view: args.p_view, p_params: args.p_params }; break;
       case 'pos_claim_owner': rpcName = 'pos_device_setup'; rpcArgs = { p_device_key: deviceKey, p_shop_name: args.p_shop_name }; break;
       case 'pos_staff_command':
         if (typeof args.p_action !== 'string' || !record(args.p_payload)) return failure(res, 400, 'invalid-request');

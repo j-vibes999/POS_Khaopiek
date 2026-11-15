@@ -1,12 +1,14 @@
 .order-alerts { position: relative; display: flex; flex: 0 0 auto; }
-.staff-topbar .order-alerts-trigger.icon-button { width: 56px; min-width: 56px; height: 56px; min-height: 56px; }
-.order-alerts-trigger { border: 1px solid #dce4d8; border-radius: 14px; background: #f1f4ee; color: var(--green); }
-.order-alerts-trigger.has-unread { border-color: #edcfaa; background: #fff5e9; color: #85561c; }
+.order-alerts-controls { display: flex; align-items: center; gap: 12px; }
+.staff-topbar .order-alerts-trigger.icon-button { width: auto; min-width: 56px; min-height: 48px; padding-inline: 11px; }
+.order-alerts-trigger { position: relative; display: flex; align-items: center; gap: 7px; border: 1px solid #dce4d8; border-radius: 12px; background: #f1f4ee; color: var(--green); }
+.order-alerts-trigger.has-pending { border-color: #edcfaa; background: #fff5e9; color: #85561c; }
 .order-alerts-trigger[aria-expanded='true'] { background: var(--green-light); color: var(--green); }
+.order-alerts-queue-label { font-size: 14px; font-weight: 600; white-space: nowrap; }
 .order-alerts-count {
   position: absolute;
-  inset-block-start: -3px;
-  inset-inline-start: calc(100% - 16px);
+  inset-block-start: -9px;
+  inset-inline-end: -8px;
   display: grid;
   place-items: center;
   min-width: 30px;
@@ -91,20 +93,25 @@
   display: flex;
   flex-shrink: 0;
   align-items: center;
-  gap: 8px;
-  min-height: 48px;
-  padding: 8px 10px;
+  justify-content: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 5px 9px;
   border: 1px solid #dce4d8;
   border-radius: 9px;
   background: #f7f8f4;
   color: #344b3d;
-  font-size: 15px;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 1.6;
-  text-align: left;
+  white-space: nowrap;
 }
-.order-alerts-sound > span { flex: 1; }
-.order-alerts-sound > strong { flex-shrink: 0; }
 .order-alerts-sound[aria-pressed='true'] { border-color: #cbdcd1; background: var(--green-light); color: var(--green); }
+
+@media (max-width: 650px) {
+  .order-alerts-queue-label { display: none; }
+  .staff-topbar .order-alerts-trigger.icon-button { min-width: 48px; padding-inline: 9px; }
+}
 
 .order-alerts-list { min-height: 0; margin: 0; padding: 0; overflow-y: auto; list-style: none; overscroll-behavior: contain; }
 .order-alerts-list > li + li { border-top: 1px solid var(--line); }

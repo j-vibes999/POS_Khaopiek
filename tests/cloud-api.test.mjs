@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCloudApi, mapCloudMenuItem, mapCloudOrder, mapCloudSnapshot } from '../src/cloud-api.mjs';
+import { createCloudApi, mapCloudMenuItem, mapCloudOrder, mapCloudSnapshot, projectOperational } from '../src/cloud-api.mjs';
 
 const restaurantId = '10000000-0000-4000-8000-000000000001';
 const memberId = '20000000-0000-4000-8000-000000000001';
@@ -58,6 +58,61 @@ function rpcClient(responses) {
     },
   };
 }
+
+test('operational polling selects the small RPC and leaves legacy callers on their existing RPC', async () => {
+  const compact = { ...rawSnapshot(), readOptimized: true, shifts: [], payments: [], activity_log: [] };
+  const api = createCloudApi(rpcClient([
+    { name: 'pos_staff_read', args: { p_restaurant_id: restaurantId, p_view: 'operational', p_params: {} }, data: compact },
+    { name: 'pos_staff_snapshot', args: { p_restaurant_id: restaurantId }, data: rawSnapshot() },
+  ]));
+  assert.equal((await api.snapshot(restaurantId, { optimized: true })).readOptimized, true);
+  assert.equal((await api.snapshot(restaurantId)).activity.length, 1);
+});
+
+test('history pages retain historical table numbers and exact server counts', async () => {
+  const args = { p_restaurant_id: restaurantId, p_view: 'orders', p_params: { offset: 25, limit: 25, query: '27' } };
+  const api = createCloudApi(rpcClient([{ name: 'pos_staff_read', args, data: {
+    rows: [{ ...rawOrder, status: 'completed', table_number: 9 }], total: 26, hasMore: false,
+  } }]));
+  const page = await api.read('orders', args.p_params, restaurantId);
+  assert.equal(page.rows[0].table, 9);
+  assert.equal(page.rows[0].orderNumber, 27);
+  assert.equal(page.total, 26);
+  assert.equal(page.hasMore, false);
+});
+
+test('report totals and named item quantities come from the complete server aggregate', async () => {
+  const args = { p_restaurant_id: restaurantId, p_view: 'reports', p_params: { range: 'week' } };
+  const api = createCloudApi(rpcClient([{ name: 'pos_staff_read', args, data: {
+    total: 90000, orderCount: 1, cash: 90000, transfer: 0, cashCount: 1, transferCount: 0,
+    items: [{ id: menuId, name_lo: rawMenu.name_lo, name_th: rawMenu.name_th, image_path: rawMenu.image_path, quantity: 2, amount: 90000 }],
+  } }]));
+  assert.deepEqual(await api.read('reports', args.p_params, restaurantId), {
+    total: 90000, orderCount: 1, cash: 90000, transfer: 0, cashCount: 1, transferCount: 0,
+    items: [{ id: menuId, lo: rawMenu.name_lo, th: rawMenu.name_th, image: rawMenu.image_path, quantity: 2, amount: 90000 }],
+  });
+});
+
+test('applying a legacy command acknowledgement retains the current shift and does not restore old history', () => {
+  const raw = rawSnapshot();
+  const openId = '90000000-0000-4000-8000-000000000002';
+  raw.shifts.push({ id: openId, opened_by: memberId, opened_at: paidAt, opening_cash: 30000, closed_at: null });
+  raw.payments.push({ ...raw.payments[0], shift_id: openId });
+  raw.orders.push({ ...rawOrder, status: 'completed' });
+  raw.commandOrderId = orderId;
+  raw.historyRevision = '90000000-0000-4000-8000-000000000003';
+  raw.activity_log = [];
+  const acknowledgement = mapCloudSnapshot(raw);
+  const active = projectOperational(acknowledgement);
+  assert.equal(active.readOptimized, true);
+  assert.deepEqual(active.shifts.map(shift => shift.id), [openId]);
+  assert.deepEqual(active.payments.map(payment => payment.shiftId), [openId]);
+  assert.deepEqual(active.orders.map(order => order.status), ['queued']);
+  assert.deepEqual(active.activity, []);
+  assert.equal(active.historyRevision, raw.historyRevision);
+  assert.equal(acknowledgement.commandOrderId, orderId);
+  assert.equal(acknowledgement.orders.length, 2);
+});
 
 test('maps real menu translations and availability without substituting demo values', () => {
   assert.deepEqual(mapCloudMenuItem(rawMenu), {
@@ -230,7 +285,7 @@ test('guest staff-call status comes only from the scoped server response', async
   assert.deepEqual(data.call, { reason: 'help', at: epochCreated });
 });
 
-test('maps device owner without inventing an Auth account; account staff still require an Auth identity', () => {
+test('maps trusted owner and cashier devices without inventing an Auth account', () => {
  const raw = rawSnapshot();
  raw.membership.user_id = null;
  raw.members[0].user_id = null;
@@ -240,6 +295,9 @@ test('maps device owner without inventing an Auth account; account staff still r
  assert.equal(mapped.staff[0].role, 'owner');
  raw.membership.role = 'cashier';
  raw.members[0].role = 'cashier';
+ assert.equal(mapCloudSnapshot(raw).staff[0].role, 'cashier');
+ raw.membership.role = 'manager';
+ raw.members[0].role = 'manager';
  assert.throws(() => mapCloudSnapshot(raw), { code: 'invalid-response' });
 });
 

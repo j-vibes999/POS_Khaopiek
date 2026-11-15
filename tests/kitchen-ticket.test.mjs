@@ -10,7 +10,7 @@ const order = {
   ],
 };
 
-function setupPreview(t, { blocked = false, fontsReady, printError } = {}) {
+function setupPreview(t, { blocked = false, fontsReady, printError, onPrint } = {}) {
   let markup = '';
   let opens = 0;
   let prints = 0;
@@ -22,7 +22,7 @@ function setupPreview(t, { blocked = false, fontsReady, printError } = {}) {
       querySelector() { return button; }, body: { offsetHeight: 1 },
       ...(fontsReady && { fonts: { ready: fontsReady } }),
     },
-    focus() {}, print() { if (printError) throw printError; prints++; }, close() { this.closed = true; },
+    focus() {}, print() { if (printError) throw printError; prints++; onPrint?.(); }, close() { this.closed = true; },
   };
   const before = Object.getOwnPropertyDescriptor(globalThis, 'window');
   Object.defineProperty(globalThis, 'window', { configurable: true, value: {
@@ -118,6 +118,15 @@ test('a timed out preview cannot print later after the cashier retries', async t
   assert.equal(preview.closed, true);
 });
 
+test('the preview cannot dispatch twice while the first print request is running', async t => {
+  let clicked = false;
+  const preview = setupPreview(t, { onPrint: () => {
+    if (!clicked) { clicked = true; preview.clickPrint(); }
+  } });
+  await printKitchenTicket(order);
+  assert.equal(preview.prints, 1);
+});
+
 test('reports a blocked print window so a paid order can be reprinted later', t => {
   setupPreview(t, { blocked: true });
   assert.throws(() => printKitchenTicket(order), { code: 'print-blocked' });
@@ -129,4 +138,30 @@ test('reprinted Lao kitchen tickets are marked as copies', t => {
   assert.match(preview.markup, /ສຳເນົາ · ພິມຊ້ຳ/);
   assert.match(preview.markup, /ໂຕະ 03/);
   assert.match(preview.markup, /ບໍ່ໃສ່ຜັກ/);
+});
+
+test('prints receipt with item prices, unit price for multiples, grand total, and payment method', t => {
+  const preview = setupPreview(t);
+  const paidPricedOrder = {
+    id: '2050',
+    table: 2,
+    paid: true,
+    status: 'queued',
+    method: 'transfer',
+    createdAt: Date.UTC(2026, 10, 8, 12, 0),
+    paidAt: Date.UTC(2026, 10, 8, 12, 5),
+    items: [
+      { lo: 'ເຂົ້າປຽກໝູ', th: 'ข้าวเปียกหมู', quantity: 2, price: 35000, size: 'regular', category: 'pho' },
+      { lo: 'ໂຄກ', th: 'โค้ก', quantity: 1, price: 10000, category: 'drinks' },
+    ],
+  };
+  printKitchenTicket(paidPricedOrder, { shopName: 'Khao Piek', language: 'lo' });
+  assert.equal(preview.prints, 1);
+  assert.match(preview.markup, /ໃບງານຄົວ \/ ໃບຮັບເງິນ/);
+  assert.match(preview.markup, /@ 35,000 ₭/);
+  assert.match(preview.markup, /70,000 ₭/);
+  assert.match(preview.markup, /10,000 ₭/);
+  assert.match(preview.markup, /ລວມທັງໝົດ/);
+  assert.match(preview.markup, /80,000 ₭/);
+  assert.match(preview.markup, /ວິທີຊຳລະ: ໂອນເງິນ/);
 });

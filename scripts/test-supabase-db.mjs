@@ -72,6 +72,7 @@ try {
     console.log(psql('supabase/tests/devices.sql').trim());
     console.log(psql('supabase/tests/menu-images.sql').trim());
     console.log(psql('supabase/tests/integrity.sql').trim());
+    console.log(psql('supabase/tests/staff-reads.sql').trim());
     await checkDeviceRevocationRace();
   }
   console.log('PASS: SQL installation is repeatable; isolated PostgreSQL security and data-integrity tests passed.');

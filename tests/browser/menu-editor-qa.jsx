@@ -1,10 +1,21 @@
 // Isolated UI fixture: no Supabase client, network writes or real shop records.
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { DishDialog } from '../../src/MenuAdmin.jsx';
+import { DishDialog, MenuAdmin } from '../../src/MenuAdmin.jsx';
 import { Locale } from '../../src/staff-ui.jsx';
 import '../../src/styles.css';
 window.menuQa = { uploads: 0, saves: [], failUpload: false, failSave: false, loseSaveAck: false };
+function MenuFixture() {
+ const [menu, setMenu] = useState([
+   { id: 'pho-beef', lo: 'ເຝີງົວ', th: 'เฝอเนื้อ', category: 'pho', price: 35000, available: false },
+   { id: 'pho-chicken', lo: 'ເຝີໄກ່', th: 'เฝอไก่', category: 'pho', price: 30000, available: true },
+   { id: 'tea', lo: 'ຊາເຢັນ', th: 'ชาเย็น', category: 'drinks', price: 18000, available: false },
+ ]);
+ return <Locale.Provider value={{ lang: 'th', t: (_, th) => th }}><MenuAdmin menu={menu} onToggle={async id => {
+   setMenu(current => current.map(dish => dish.id === id ? { ...dish, available: !dish.available } : dish));
+   return null;
+ }}/></Locale.Provider>;
+}
 function Fixture() {
  const [open, setOpen] = useState(true);
  return <Locale.Provider value={{ lang: 'th', t: (_, th) => th }}><button id="open-menu-editor" onClick={() => setOpen(true)}>Open menu editor</button>{open && <DishDialog dish={window.menuQa.initial ?? { category: 'khao' }} onClose={() => setOpen(false)} onUploadImage={async blob => {
@@ -22,4 +33,5 @@ function Fixture() {
    setOpen(false); return null;
  }}/>}</Locale.Provider>;
 }
-createRoot(document.getElementById('root')).render(<Fixture/>);
+const showList = new URLSearchParams(location.search).has('list');
+createRoot(document.getElementById('root')).render(showList ? <MenuFixture/> : <Fixture/>);

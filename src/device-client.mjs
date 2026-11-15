@@ -5,6 +5,7 @@ const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
 const fields = {
   pos_setup_status: [],
   pos_staff_snapshot: [],
+  pos_staff_read: ['p_view', 'p_params'],
   pos_claim_owner: ['p_shop_name'],
   pos_staff_command: ['p_action', 'p_payload'],
 };

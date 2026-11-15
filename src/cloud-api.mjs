@@ -1,5 +1,6 @@
 // The browser sends commands to transactional RPCs; it never writes POS tables directly.
 import { assertMenuImage, validateMenuImageTicket, MENU_IMAGE_BUCKET } from './menu-upload.mjs';
+import { isActiveOrder } from './order-model.mjs';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const guestIdentity = /^[0-9a-f]{48}$/;
 const fail = code => Object.assign(new Error(code), { code });
@@ -65,7 +66,7 @@ export function mapCloudOrder(raw, tables = []) {
 }
 
 function mapMember(raw) {
-  if (!record(raw) || !uuid.test(raw.id) || !(uuid.test(raw.user_id) || (raw.user_id === null && raw.role === 'owner')) || typeof raw.display_name !== 'string'
+  if (!record(raw) || !uuid.test(raw.id) || !(uuid.test(raw.user_id) || (raw.user_id === null && ['owner', 'cashier'].includes(raw.role))) || typeof raw.display_name !== 'string'
     || !['owner', 'manager', 'cashier'].includes(raw.role) || typeof raw.active !== 'boolean') throw fail('invalid-response');
   return { id: raw.id, authUserId: raw.user_id, ...(typeof raw.email === 'string' && { authEmail: raw.email }), name: raw.display_name, role: raw.role, active: raw.active };
 }
@@ -95,6 +96,23 @@ function activityType(entry) {
   }[entry.event_type] ?? entry.event_type;
 }
 
+function mapActivity(entry, staff, orderNumbers = new Map()) {
+  const actor = staff.find(member => member.id === entry.actor_membership_id);
+  const orderNumber = entry.details?.orderNumber ?? orderNumbers.get(entry.order_id);
+  return { ...entry.details, ...(Number.isSafeInteger(orderNumber) && { orderNumber }), id: entry.id, type: activityType(entry), at: instant(entry.created_at), by: actor?.name ?? null, role: actor?.role ?? null, orderId: entry.order_id ?? undefined };
+}
+
+export function projectOperational(snapshot) {
+  if (snapshot.readOptimized) return snapshot;
+  const shifts = snapshot.shifts.filter(shift => shift.closedAt === undefined);
+  const openIds = new Set(shifts.map(shift => shift.id));
+  return {
+    ...snapshot, readOptimized: true, historyRevision: snapshot.historyRevision ?? snapshot.activity[0]?.id ?? null,
+    orders: snapshot.orders.filter(isActiveOrder), shifts,
+    payments: snapshot.payments.filter(payment => openIds.has(payment.shiftId)), activity: [],
+  };
+}
+
 export function mapCloudSnapshot(raw) {
   if (!record(raw) || !raw.membership) throw fail('session-expired');
   const membership = mapMember(raw.membership);
@@ -120,6 +138,8 @@ export function mapCloudSnapshot(raw) {
   }
   return {
     restaurantId: raw.restaurantId, userId: membership.id, staff,
+    ...(raw.readOptimized === true && { readOptimized: true }),
+    ...((raw.readOptimized === true || Object.hasOwn(raw, 'historyRevision')) && { historyRevision: raw.historyRevision ?? null }),
     ...(Object.hasOwn(raw, 'commandChanged') && { commandChanged: raw.commandChanged }),
     ...(raw.commandOrderId && { commandOrderId: raw.commandOrderId }),
     settings: { shopName: restaurant.name, branch: restaurant.branch ?? '', phone: restaurant.phone ?? '', methods: [...restaurant.payment_methods] },
@@ -131,11 +151,7 @@ export function mapCloudSnapshot(raw) {
       amount: numeric(payment.amount), method: payment.method, cashReceived: payment.cash_received === null ? null : numeric(payment.cash_received),
       confirmedAt: instant(payment.confirmed_at), idempotencyKey: payment.idempotency_key,
     })),
-    activity: list(raw.activity_log).map(entry => {
-      const actor = staff.find(member => member.id === entry.actor_membership_id);
-      const orderNumber = entry.details?.orderNumber ?? orderNumbers.get(entry.order_id);
-      return { ...entry.details, ...(Number.isSafeInteger(orderNumber) && { orderNumber }), id: entry.id, type: activityType(entry), at: instant(entry.created_at), by: actor?.name ?? null, role: actor?.role ?? null, orderId: entry.order_id ?? undefined };
-    }),
+    activity: list(raw.activity_log).map(entry => mapActivity(entry, staff, orderNumbers)),
     calls, drafts: {}, clearedAt: {},
   };
 }
@@ -169,8 +185,30 @@ export function createCloudApi(client) {
     return result.data;
   }
   return {
-    async snapshot(restaurantId = null) {
+    async snapshot(restaurantId = null, { optimized = false } = {}) {
+      if (optimized) return mapCloudSnapshot(await rpc('pos_staff_read', { p_restaurant_id: restaurantId, p_view: 'operational', p_params: {} }));
       return mapCloudSnapshot(await rpc('pos_staff_snapshot', { p_restaurant_id: restaurantId }));
+    },
+    async read(view, params, restaurantId, staff = []) {
+      const mapRow = view === 'orders' ? row => mapCloudOrder(row)
+        : view === 'activity' ? row => mapActivity(row, staff)
+        : view === 'shifts' ? row => mapShift(row, staff) : null;
+      if (!mapRow && view !== 'reports') throw fail('invalid-read');
+      const data = await rpc('pos_staff_read', { p_restaurant_id: restaurantId, p_view: view, p_params: params });
+      if (!record(data)) throw fail('invalid-response');
+      if (view === 'reports') {
+        return {
+          total: numeric(data.total), orderCount: numeric(data.orderCount),
+          cash: numeric(data.cash), transfer: numeric(data.transfer), cashCount: numeric(data.cashCount), transferCount: numeric(data.transferCount),
+          items: list(data.items).map(row => ({
+            id: row.id, lo: row.name_lo, th: row.name_th || row.name_lo, image: row.image_path,
+            quantity: numeric(row.quantity), amount: numeric(row.amount),
+          })),
+        };
+      }
+      const total = numeric(data.total);
+      if (total < 0 || typeof data.hasMore !== 'boolean') throw fail('invalid-response');
+      return { rows: list(data.rows).map(mapRow), total, hasMore: data.hasMore };
     },
     async command(action, payload, restaurantId) {
       if (action === 'menu.save' && (await rpc('pos_setup_status', {}))?.integrityReady !== true) throw fail('upgrade-required');

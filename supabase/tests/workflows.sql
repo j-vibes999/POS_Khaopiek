@@ -36,7 +36,8 @@ do $$ declare result jsonb; cart jsonb; response jsonb; id uuid; n integer; fn t
   if jsonb_array_length(result->'orders')<>1 or result->'matchedOrder'->>'id'<>id::text or result->'orders'->0->>'table_number'<>'1'
     or result->'orders'->0->'order_items'->0->>'unit_price'<>'45000' then raise exception 'Guest snapshot missing server quote: %',result; end if;
   if result::text like '%token_hash%' or result::text like '%idempotency_key%' or result ? 'payments' then raise exception 'Guest response leaked private values'; end if;
-  if jsonb_array_length(public.pos_guest_orders('32000000-0000-4000-8000-000000000001',repeat('c',48))->'orders')<>0 then raise exception 'Another guest read an order'; end if;
+  if jsonb_array_length(public.pos_guest_orders('32000000-0000-4000-8000-000000000001',repeat('c',48))->'orders')<>1 then raise exception 'Shared table orders failed'; end if;
+  if jsonb_array_length(public.pos_guest_orders('32000000-0000-4000-8000-000000000002',repeat('c',48))->'orders')<>0 then raise exception 'Another table read an order'; end if;
   if public.pos_guest_orders('32000000-0000-4000-8000-000000000002',repeat('a',48),repeat('b',48))->'matchedOrder'<>'null'::jsonb then raise exception 'Another table read an order'; end if;
   begin perform public.pos_guest_cancel('32000000-0000-4000-8000-000000000001',repeat('c',48),id); raise exception 'Other guest canceled order'; exception when sqlstate 'P0001' then if sqlerrm<>'access-denied' then raise; end if; end;
   begin perform public.pos_guest_submit('32000000-0000-4000-8000-000000000001',repeat('a',48),repeat('b',48),cart,'transfer',jsonb_build_array(1,cart,'transfer')::text); raise exception 'Changed immutable request accepted'; exception when sqlstate 'P0001' then if sqlerrm<>'request-conflict' then raise; end if; end;

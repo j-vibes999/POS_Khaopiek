@@ -5,6 +5,7 @@ import { Dialog, EmptyState, IconButton, PageHeader, RoleChip, clockTime, initia
 import { canEditStaffMember, canOpen, canSignInStaff, currentShift, maxTables, paymentMethods, roles, shiftTotals } from './backoffice-model.mjs';
 import { isActiveOrder } from './order-model.mjs';
 import { useMenuQrs } from './use-menu-qr';
+import { StaffReadPages, StaffReadRefresh, StaffReadStatus, useStaffRead } from './staff-read.jsx';
 import './backoffice-refinements.css';
 
 const signed = amount => `${amount > 0 ? '+' : amount < 0 ? '−' : ''}${money(Math.abs(amount))}`;
@@ -35,7 +36,7 @@ const parseAmount = value => value.trim() !== '' && Number.isInteger(Number(valu
 
 function Avatar({ member }) { return <span className={`avatar role-${member.role}`}>{initial(member.name)}</span>; }
 
-export function ShiftView({ shifts, orders, payments, user, onOpen, onClose }) {
+export function ShiftView({ shifts, orders, payments, read, historyRevision, user, onOpen, onClose }) {
   const { t } = useL();
   const shift = currentShift(shifts);
   const [amount, setAmount] = useState('');
@@ -45,7 +46,10 @@ export function ShiftView({ shifts, orders, payments, user, onOpen, onClose }) {
   // Count up to this render rather than the half-minute clock, so a payment just taken shows at once.
   const totals = shift && shiftTotals(shift, orders, Date.now(), payments);
   const ownOnly = user.role === 'cashier';
-  const history = shifts.filter(item => item.closedAt && (!ownOnly || item.openedBy === user.id));
+  const [offset, setOffset] = useState(0);
+  const limit = 25;
+  const archive = useStaffRead(read, 'shifts', { offset, limit, ownOnly }, historyRevision);
+  const history = read ? archive.data?.rows ?? [] : shifts.filter(item => item.closedAt && (!ownOnly || item.openedBy === user.id));
   const opening = parseAmount(amount);
   async function open(event) {
     event.preventDefault();
@@ -88,15 +92,17 @@ export function ShiftView({ shifts, orders, payments, user, onOpen, onClose }) {
         <button className="button primary full" disabled={openingShift || opening === null}><Wallet size={20}/>{openingShift ? t('ກຳລັງເປີດກະ…', 'กำลังเปิดกะ…') : t('ເປີດກະ', 'เปิดกะ')}</button>
       </div>
     </form>}
-    <section className="bo-card">
-      <div className="bo-card-head"><div><h2>{ownOnly ? t('ກະຂອງທ່ານ', 'กะของคุณ') : t('ປະຫວັດກະ', 'ประวัติกะ')}</h2><p>{t('ຍອດຂອງກະທີ່ປິດແລ້ວຈະບໍ່ປ່ຽນແປງ', 'ยอดของกะที่ปิดแล้วจะไม่เปลี่ยนแปลง')}</p></div></div>
+    <section className="bo-card" aria-busy={archive.loading}>
+      <div className="bo-card-head"><div><h2>{ownOnly ? t('ກະຂອງທ່ານ', 'กะของคุณ') : t('ປະຫວັດກະ', 'ประวัติกะ')}</h2><p>{t('ຍອດຂອງກະທີ່ປິດແລ້ວຈະບໍ່ປ່ຽນແປງ', 'ยอดของกะที่ปิดแล้วจะไม่เปลี่ยนแปลง')}</p></div>{read && <StaffReadRefresh request={archive}/>}</div>
       {history.length ? <div className="shift-history">{history.map(item => <article className="shift-record" key={item.id}>
         <div className="shift-when"><b>{dayLabel(item.openedAt, t)}</b><span>{clockTime(item.openedAt)}–{clockTime(item.closedAt)}</span></div>
         <div className="shift-who"><span>{item.openedByName}</span>{item.closedByName !== item.openedByName && <small>{t('ປິດໂດຍ', 'ปิดโดย')} {item.closedByName}</small>}</div>
         <div className="shift-figure"><small>{t('ຄວນມີ', 'ควรมี')}</small><span>{kip(item.expectedCash)}</span></div>
         <div className="shift-figure"><small>{t('ນັບໄດ້', 'นับได้')}</small><span>{kip(item.countedCash)}</span></div>
         <span className={`difference-pill ${differenceTone(item.difference)}`}>{differenceLabel(item.difference, t)} {item.difference !== 0 && `${signed(item.difference)} ₭`}</span>
-      </article>)}</div> : <EmptyState icon={History} title={t('ຍັງບໍ່ມີກະທີ່ປິດແລ້ວ', 'ยังไม่มีกะที่ปิดแล้ว')} text={t('ເມື່ອປິດກະ ຍອດເງິນ ແລະ ສ່ວນຕ່າງຈະຖືກບັນທຶກໄວ້ທີ່ນີ້', 'เมื่อปิดกะ ยอดเงินและส่วนต่างจะถูกบันทึกไว้ที่นี่')}/>}
+      </article>)}</div> : !archive.loading && !archive.error && <EmptyState icon={History} title={t('ຍັງບໍ່ມີກະທີ່ປິດແລ້ວ', 'ยังไม่มีกะที่ปิดแล้ว')} text={t('ເມື່ອປິດກະ ຍອດເງິນ ແລະ ສ່ວນຕ່າງຈະຖືກບັນທຶກໄວ້ທີ່ນີ້', 'เมื่อปิดกะ ยอดเงินและส่วนต่างจะถูกบันทึกไว้ที่นี่')}/>}
+      <StaffReadStatus request={archive}/>
+      <StaffReadPages request={archive} offset={offset} limit={limit} onPage={setOffset}/>
     </section>
     {shift && shift.id === closingShiftId && <CloseShiftDialog expected={totals.expectedCash} onClose={() => setClosingShiftId(null)} onConfirm={async counted => {
       if (await onClose(counted, closingShiftId, totals.expectedCash)) {
@@ -243,7 +249,8 @@ export function StaffView({ staff, user, onSave, cloud = false }) {
   const { t } = useL();
   const [editingId, setEditingId] = useState(null);
   const member = editingId === '' ? { role: 'cashier', active: true } : staff.find(item => item.id === editingId);
-  const canEditMember = target => canEditStaffMember(user, target.role) && (!cloud || (target.id !== user.id && target.role !== 'owner'));
+  const canEditMember = target => canEditStaffMember(user, target.role)
+    && (!cloud || (target.id !== user.id && target.role !== 'owner' && target.authUserId !== null));
   const canEdit = Boolean(member && canEditMember(member));
   const allowedRoles = roles.filter(role => canEditStaffMember(user, role) && (!cloud || role !== 'owner'));
   useEffect(() => {
@@ -256,6 +263,7 @@ export function StaffView({ staff, user, onSave, cloud = false }) {
     <dl className="bo-inline-counts" aria-label={t('ພະນັກງານທີ່ໃຊ້ງານໄດ້', 'พนักงานที่ใช้งานได้')}>{roles.map(role => <div key={role}><dt>{roleText(role, t)}</dt><dd>{staff.filter(member => member.role === role && member.active).length}</dd></div>)}</dl>
     <div className="staff-list">{staff.map(member => {
       const available = canSignInStaff(member);
+      const cashierDevice = cloud && member.role === 'cashier' && member.authUserId === null;
       const status = !roles.includes(member.role)
         ? t('ຕ້ອງກຳນົດຕຳແໜ່ງໃໝ່', 'ต้องกำหนดตำแหน่งใหม่')
         : available ? t('ໃຊ້ງານໄດ້', 'ใช้งานได้') : t('ປິດການໃຊ້ງານ', 'ปิดใช้งาน');
@@ -263,7 +271,7 @@ export function StaffView({ staff, user, onSave, cloud = false }) {
         <Avatar member={member}/>
         <div className="staff-card-body">
           <strong>{member.name}{member.id === user.id && <em>{t('ທ່ານ', 'คุณ')}</em>}</strong>
-          <span className="staff-row-meta"><RoleChip role={member.role}/><span className="staff-meta"><span className={`status-text ${available ? 'is-on' : ''}`}>{status}</span>{!cloud && ' · PIN ••••'}</span></span>
+          <span className="staff-row-meta"><RoleChip role={member.role}/><span className="staff-meta"><span className={`status-text ${available ? 'is-on' : ''}`}>{status}</span>{cashierDevice && t(' · ເຄື່ອງຮັບເງິນ', ' · เครื่องแคชเชียร์')}{!cloud && ' · PIN ••••'}</span></span>
         </div>
         {canEditMember(member) && <button className="button secondary staff-edit" aria-label={`${t('ແກ້ໄຂ', 'แก้ไข')} ${member.name}`} onClick={() => setEditingId(member.id)}><Pencil size={18}/>{t('ແກ້ໄຂ', 'แก้ไข')}</button>}
       </article>;
@@ -371,7 +379,7 @@ function StaffSignIn({ staff, currentId, onSignIn, onClose }) {
   </>;
 }
 
-export function SettingsView({ settings, activity, menu, onSave }) {
+export function SettingsView({ settings, activity, menu, read, historyRevision, onSave }) {
   const { t } = useL();
   const [tab, setTab] = useState('shop');
   const tabs = [
@@ -386,7 +394,7 @@ export function SettingsView({ settings, activity, menu, onSave }) {
       <div className="settings-panel">
         {tab === 'shop' && <ShopSettings settings={settings} onSave={onSave}/>}
         {tab === 'payments' && <PaymentSettings settings={settings} onSave={onSave}/>}
-        {tab === 'activity' && <ActivityLog activity={activity} menu={menu}/>}
+        {tab === 'activity' && <ActivityLog activity={activity} menu={menu} read={read} historyRevision={historyRevision}/>}
       </div>
     </div>
   </section>;
@@ -514,17 +522,21 @@ function activityText(entry, t, lang, menu) {
   }[entry.type] ?? entry.type;
 }
 
-function ActivityLog({ activity, menu }) {
+function ActivityLog({ activity, menu, read, historyRevision }) {
   const { t, lang } = useL();
   const [limit, setLimit] = useState(50);
-  if (!activity.length) return <div className="bo-card"><EmptyState icon={History} title={t('ຍັງບໍ່ມີປະຫວັດ', 'ยังไม่มีประวัติ')} text={t('ການຮັບເງິນ ປິດໂຕະ ເປີດປິດກະ ແລະ ການແກ້ໄຂຕ່າງໆ ຈະຖືກບັນທຶກໄວ້ທີ່ນີ້', 'การรับเงิน ปิดโต๊ะ เปิดปิดกะ และการแก้ไขต่าง ๆ จะถูกบันทึกไว้ที่นี่')}/></div>;
-  const days = activity.slice(0, limit).reduce((groups, entry) => {
+  const [offset, setOffset] = useState(0);
+  const archive = useStaffRead(read, 'activity', { offset, limit: 50 }, historyRevision);
+  const rows = read ? archive.data?.rows ?? [] : activity.slice(0, limit);
+  const days = rows.reduce((groups, entry) => {
     const label = dayLabel(entry.at, t);
     if (groups.at(-1)?.label !== label) groups.push({ label, entries: [] });
     groups.at(-1).entries.push(entry);
     return groups;
   }, []);
-  return <div className="bo-card activity-card">
+  return <div className="bo-card activity-card" aria-busy={archive.loading}>
+    {read && <StaffReadRefresh request={archive}/>}
+    {!rows.length && !archive.loading && !archive.error && <EmptyState icon={History} title={t('ຍັງບໍ່ມີປະຫວັດ', 'ยังไม่มีประวัติ')} text={t('ການຮັບເງິນ ປິດໂຕະ ເປີດປິດກະ ແລະ ການແກ້ໄຂຕ່າງໆ ຈະຖືກບັນທຶກໄວ້ທີ່ນີ້', 'การรับเงิน ปิดโต๊ะ เปิดปิดกะ และการแก้ไขต่าง ๆ จะถูกบันทึกไว้ที่นี่')}/>}
     {days.map(day => <section key={day.label}><h3 className="activity-day">{day.label}</h3>
       <ol className="activity-list">{day.entries.map(entry => { const [Icon, tone] = activityKinds[entry.type] ?? [History, 'tone-neutral']; return <li className="activity-row" key={entry.id}>
         <span className={`activity-icon ${tone}`}><Icon size={17}/></span>
@@ -532,6 +544,8 @@ function ActivityLog({ activity, menu }) {
         <time>{clockTime(entry.at)}</time>
       </li>; })}</ol>
     </section>)}
-    {activity.length > limit && <button className="button secondary full" onClick={() => setLimit(value => value + 50)}>{t('ສະແດງເພີ່ມ', 'แสดงเพิ่ม')} ({activity.length - limit})</button>}
+    {!read && activity.length > limit && <button className="button secondary full" onClick={() => setLimit(value => value + 50)}>{t('ສະແດງເພີ່ມ', 'แสดงเพิ่ม')} ({activity.length - limit})</button>}
+    <StaffReadStatus request={archive}/>
+    <StaffReadPages request={archive} offset={offset} limit={50} onPage={setOffset}/>
   </div>;
 }
